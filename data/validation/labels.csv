@@ -1,0 +1,126 @@
+﻿image_id,label,variation_group,face_size,lighting,background,framing,eye_visibility,people_count,sharpness,attire,pose,selfie,label_reason
+G001,GOOD,casual_outdoor,large,good,soft outdoor,head and shoulders,clear,1,high,casual,front or three-quarter,no,Sharp eye contact and gentle outdoor background make a clear small avatar.
+G002,GOOD,event_headshot,large,good,event,head and shoulders,clear,1,high,business casual,front or three-quarter,no,Confident smile and close framing keep the face legible despite event lights.
+G003,GOOD,casual_outdoor,large,good,soft outdoor,head and shoulders,clear,1,high,casual,front or three-quarter,no,"Warm expression, natural light, and soft foliage give a strong casual avatar."
+G004,GOOD,casual_headshot,large,good,simple,head and shoulders,clear,1,high,casual,front,no,Face fills the frame against a plain dark background with clear eyes.
+G005,GOOD,studio_headshot,large,even,clean,head and shoulders,clear,1,high,varied,front,no,Even studio light and uncluttered background emphasize the face.
+G006,GOOD,studio_headshot,large,even,clean,head and shoulders,clear,1,high,varied,front,no,"Bright, balanced headshot with clean backdrop and clear expression."
+G007,GOOD,event_headshot,large,good,event,head and shoulders,clear,1,high,business casual,front or three-quarter,no,Well-focused speaker portrait with a sufficiently prominent smiling face.
+G008,GOOD,environmental_professional,medium,good,work context,torso or headshot,clear,1,high,business casual,front,no,Professional setting adds context without losing face prominence.
+G009,GOOD,event_headshot,large,good,event,head and shoulders,clear,1,high,business casual,front or three-quarter,no,Face remains clear and well framed in a polished event portrait.
+G010,GOOD,studio_headshot,large,even,clean,head and shoulders,clear,1,high,varied,front,no,"Direct expression, balanced light, and neutral backdrop hold up at avatar size."
+G011,GOOD,studio_headshot,large,even,clean,head and shoulders,clear,1,high,varied,front,no,Clear centered face and simple pale background work in a circular crop.
+G012,GOOD,casual_outdoor,large,good,soft outdoor,head and shoulders,clear,1,high,casual,front or three-quarter,no,"Friendly expression, sharp eyes, and softly blurred outdoor background."
+G013,GOOD,studio_headshot,large,even,clean,head and shoulders,clear,1,high,varied,front,no,Clean close framing and simple backdrop give the face visual priority.
+G014,GOOD,event_headshot,large,good,event,head and shoulders,clear,1,high,business casual,front or three-quarter,no,Strong facial clarity and well-controlled event portrait framing.
+G015,GOOD,casual_headshot,large,good,simple,head and shoulders,clear,1,high,casual,front,no,Relaxed business-casual look with clear face and simple backdrop.
+G016,GOOD,casual_headshot,large,good,simple,head and shoulders,clear,1,high,casual,front,no,Natural expression and close crop keep the portrait inviting and legible.
+G017,GOOD,environmental_professional,medium,good,work context,torso or headshot,clear,1,high,business casual,front,no,Confident pose and uncluttered background still frame the face well.
+G018,GOOD,casual_headshot,large,good,simple,head and shoulders,clear,1,high,casual,front,no,Well-lit face and soft neutral setting remain clear at small size.
+G019,GOOD,studio_headshot,large,even,clean,head and shoulders,clear,1,high,varied,front,no,Sharp monochrome portrait with bright eyes and tidy crop.
+G020,GOOD,casual_headshot,large,good,simple,head and shoulders,clear,1,high,casual,front,no,Clear eye contact and intentional close framing outweigh casual attire.
+G021,GOOD,casual_outdoor,large,good,soft outdoor,head and shoulders,clear,1,high,casual,front or three-quarter,no,Outdoor light and head-and-shoulders crop make a personable avatar.
+G022,GOOD,studio_headshot,large,even,clean,head and shoulders,clear,1,high,varied,front,no,Simple clean background and balanced face prominence suit a profile.
+G023,GOOD,studio_headshot,large,even,clean,head and shoulders,clear,1,high,varied,front,no,"Direct gaze, crisp detail, and simple monochrome backdrop."
+G024,GOOD,business_headshot,large,even,clean,head and shoulders,clear,1,high,business,front,no,"Even lighting, friendly expression, and uncluttered setting."
+G025,GOOD,studio_headshot,large,even,clean,head and shoulders,clear,1,high,varied,front,no,Professional close portrait with excellent sharpness and face isolation.
+G026,GOOD,business_headshot,large,even,clean,head and shoulders,clear,1,high,business,front,no,Clear face and composed business portrait with restrained background.
+G027,GOOD,studio_headshot,large,even,clean,head and shoulders,clear,1,high,varied,front,no,"Strong contrast, visible eyes, and simple backdrop preserve focus."
+G028,GOOD,environmental_professional,medium,good,work context,torso or headshot,clear,1,high,business casual,front,no,Office background supplies context while the face stays prominent.
+G029,GOOD,casual_outdoor,large,good,soft outdoor,head and shoulders,clear,1,high,casual,front or three-quarter,no,"Outdoor portrait has clear eyes, sharp face, and soft background."
+G030,GOOD,business_headshot,large,even,clean,head and shoulders,clear,1,high,business,front,no,Professional attire and tidy background support a clear avatar.
+G031,GOOD,studio_headshot,large,even,clean,head and shoulders,clear,1,high,varied,front,no,Simple background and head-and-shoulders framing with clear eye contact.
+G032,GOOD,business_headshot,large,even,clean,head and shoulders,clear,1,high,business,front,no,Crisp official-style portrait with good light and isolated face.
+G033,GOOD,casual_headshot,large,good,simple,head and shoulders,clear,1,high,casual,front,no,Relaxed pose and clean studio background make a strong casual profile.
+G034,GOOD,business_headshot,large,even,clean,head and shoulders,clear,1,high,business,front,no,"Professional crop, even light, and direct friendly expression."
+G035,GOOD,business_headshot,large,even,clean,head and shoulders,clear,1,high,business,front,no,Classic focused headshot with clean facial detail and little distraction.
+G036,GOOD,casual_headshot,large,good,simple,head and shoulders,clear,1,high,casual,front,no,Approachable indoor portrait with the face large and easily identified.
+G037,GOOD,casual_outdoor,large,good,soft outdoor,head and shoulders,clear,1,high,casual,front or three-quarter,no,Excellent candid portrait retains a sharp isolated face and natural smile.
+G038,GOOD,environmental_professional,medium,good,work context,torso or headshot,clear,1,high,business casual,front,no,Work setting and flattering portrait light keep the face clear.
+G039,GOOD,casual_outdoor,large,good,soft outdoor,head and shoulders,clear,1,high,casual,front or three-quarter,no,Sharp close portrait in greenery with friendly expression and clear eyes.
+G040,GOOD,environmental_professional,medium,good,work context,torso or headshot,clear,1,high,business casual,front,no,Bookcase context is restrained; face and eyes remain prominent.
+M001,MEDIUM,archival_portrait,medium,uneven,historical,torso or headshot,clear,1,medium,formal,front,no,"Single visible face and formal pose work, but archival softness limits impact."
+M002,MEDIUM,graduation,medium,mixed,event,head and shoulders,clear,1,medium,graduation,front,no,"Graduation context is appropriate, though dated contrast and crop weaken clarity."
+M003,MEDIUM,full_body,small,good,contextual,full body,clear,1,high,casual,three-quarter,no,"Person is identifiable, but the full-body distance reduces avatar legibility."
+M004,MEDIUM,archival_portrait,medium,uneven,historical,torso or headshot,clear,1,medium,formal,front,no,"Professional desk context is relevant, yet monochrome distance makes face small."
+M005,MEDIUM,event_with_distraction,medium,mixed,busy event,head or torso,clear,2,medium,business casual,three-quarter,no,"Speaker context fits LinkedIn, but background and side angle compete."
+M006,MEDIUM,archival_portrait,medium,uneven,historical,torso or headshot,clear,1,medium,formal,front,no,Professional historical scene has a visible face but busy desk details.
+M007,MEDIUM,outdoor_casual,small,good,outdoor,torso,partial,1,high,casual,looking down,no,"Pleasant casual setting, but face is small and gaze is down at a book."
+M008,MEDIUM,side_angle,medium,good,contextual,head or torso,partial,1,high,varied,side,no,"Sharp portrait is attractive, though face turns away from camera."
+M009,MEDIUM,graduation,medium,mixed,event,head and shoulders,clear,1,medium,graduation,front,no,Graduation attire reads professionally but frame is tight and eventlike.
+M010,MEDIUM,graduation,medium,mixed,event,head and shoulders,clear,1,medium,graduation,front,no,"Cap and gown signal an achievement, yet crowded color and crop feel event-specific."
+M011,MEDIUM,casual_selfie,medium,mixed,everyday setting,head and shoulders,clear,1,medium,casual,selfie angle,yes,"Face is clear in a neat selfie, though obvious handheld framing feels casual."
+M012,MEDIUM,full_body,small,good,contextual,full body,clear,1,high,casual,three-quarter,no,"Natural seated portrait looks pleasant, but face shrinks in a circular avatar."
+M013,MEDIUM,event_with_distraction,medium,mixed,busy event,head or torso,clear,2,medium,business casual,three-quarter,no,"A clear person appears at an event, with competing people around them."
+M014,MEDIUM,archival_portrait,medium,uneven,historical,torso or headshot,clear,1,medium,formal,front,no,"Formal headshot has good isolation, but dated softness and contrast reduce impact."
+M015,MEDIUM,side_angle,medium,good,contextual,head or torso,partial,1,high,varied,side,no,"Face is well lit, but speaking pose and profile weaken direct connection."
+M016,MEDIUM,harsh_light,large,harsh,simple or outdoor,head and shoulders,partial,1,medium,varied,front,no,"Face dominates, but blown highlights obscure detail and eye area."
+M017,MEDIUM,harsh_light,large,harsh,simple or outdoor,head and shoulders,partial,1,medium,varied,front,no,Friendly close portrait with distracting blown highlights across the face.
+M018,MEDIUM,casual_selfie,medium,mixed,everyday setting,head and shoulders,clear,1,medium,casual,selfie angle,yes,"Approachable face, but hand pose and casual framing make it borderline."
+M019,MEDIUM,side_angle,medium,good,contextual,head or torso,partial,1,high,varied,side,no,"Good exposure and sharpness, yet strong side profile limits eye contact."
+M020,MEDIUM,event_with_distraction,medium,mixed,busy event,head or torso,clear,2,medium,business casual,three-quarter,no,"Clear smiling face, but signage and tight event crop draw attention."
+M021,MEDIUM,busy_background,medium,good,patterned,torso,clear,1,high,business casual,front,no,Confident portrait loses simplicity against a graphic patterned wall.
+M022,MEDIUM,event_with_distraction,medium,mixed,busy event,head or torso,clear,2,medium,business casual,three-quarter,no,"Face is sharp and expressive, but event signage dominates the background."
+M023,MEDIUM,archival_portrait,medium,uneven,historical,torso or headshot,clear,1,medium,formal,front,no,"Strong vintage photograph, though dated context is less useful as a current profile."
+M024,MEDIUM,awkward_crop,medium,mixed,varied,awkward,clear,1,medium,varied,three-quarter,no,Smiling face is visible but tilted hat and diagonal crop reduce clarity.
+M025,MEDIUM,archival_portrait,medium,uneven,historical,torso or headshot,clear,1,medium,formal,front,no,"Dramatic monochrome portrait is sharp, yet formal styling feels distant."
+M026,MEDIUM,full_body,small,good,contextual,full body,clear,1,high,casual,three-quarter,no,"Professional attire and open setting, but face is too small for an avatar."
+M027,MEDIUM,low_light,large,dim,dark,head and shoulders,partial,1,medium,varied,front,no,"Clear face and tight crop, but colored dark lighting gives uneven skin detail."
+M028,MEDIUM,awkward_crop,medium,mixed,varied,awkward,clear,1,medium,varied,three-quarter,no,"Person is recognizable, though face is too close and background distracts."
+M029,MEDIUM,event_with_distraction,medium,mixed,busy event,head or torso,clear,2,medium,business casual,three-quarter,no,"Friendly informal expression, but people and objects behind compete."
+M030,MEDIUM,low_sharpness,large,mixed,processed,headshot,clear,1,low,casual,front,no,"Distinctive artistic portrait works partly, with processing and softness harming detail."
+M031,MEDIUM,archival_portrait,medium,uneven,historical,torso or headshot,clear,1,medium,formal,front,no,"Face is readable, but old image compression and striped clothing distract."
+M032,MEDIUM,business_headshot,large,even,clean,head and shoulders,clear,1,high,business,front,no,"Sharp formal portrait, though flag and official setting narrow its versatility."
+M033,MEDIUM,studio_headshot,large,even,clean,head and shoulders,clear,1,high,varied,front,no,Creative monochrome portrait is crisp but unusual expression may polarize.
+M034,MEDIUM,archival_portrait,medium,uneven,historical,torso or headshot,clear,1,medium,formal,front,no,"Visible face in older outdoor photograph, with softness and dated context."
+M035,MEDIUM,partial_obstruction,medium,mixed,event,head or torso,partial,1,high,business casual,front,no,"Event portrait is focused, but microphone and flowers cut across the face."
+M036,MEDIUM,awkward_crop,medium,mixed,varied,awkward,clear,1,medium,varied,three-quarter,no,Professional event image has a clear face but abrupt side crop and background.
+M037,MEDIUM,casual_selfie,medium,mixed,everyday setting,head and shoulders,clear,1,medium,casual,selfie angle,yes,Face is reasonably clear but angled handheld framing and colored light weaken it.
+M038,MEDIUM,low_light,large,dim,dark,head and shoulders,partial,1,medium,varied,front,no,"Formal pose is present, but black-on-black framing buries facial expression."
+M039,MEDIUM,casual_selfie,medium,mixed,everyday setting,head and shoulders,clear,1,medium,casual,selfie angle,yes,"Close face and eye contact, yet selfie angle and busy fabric distract."
+M040,MEDIUM,casual_selfie,medium,mixed,everyday setting,head and shoulders,clear,1,medium,casual,selfie angle,yes,Face is clear and pleasant; obvious casual selfie styling is less polished.
+M041,MEDIUM,harsh_light,large,harsh,simple or outdoor,head and shoulders,partial,1,medium,varied,front,no,Face remains identifiable but bright outdoor glare flattens features.
+M042,MEDIUM,car_selfie,medium,mixed,car interior,tight headshot,clear,1,medium,casual,selfie angle,yes,"Face is visible in a car selfie, with a tight angle and distracting cabin."
+M043,MEDIUM,home_office,medium,mixed,home office,torso,clear,1,medium,casual,seated,no,"Simple home setting and visible face, but pose and lighting are too informal."
+M044,MEDIUM,casual_selfie,medium,mixed,everyday setting,head and shoulders,clear,1,medium,casual,selfie angle,yes,"Outdoor selfie shows a clear face, though the low camera angle hurts framing."
+M045,MEDIUM,side_angle,medium,good,contextual,head or torso,partial,1,high,varied,side,no,"Attractive outdoor context, but subject looks away and face becomes smaller."
+B001,BAD,couple,medium,varied,varied,two-person,clear,2,medium,varied,shared frame,varied,Two equally prominent people make ownership of the avatar ambiguous.
+B002,BAD,tiny_face,tiny,varied,dominant scene,wide or full body,unclear,1,medium,varied,distant,no,Person is a small element of a wide scene and disappears at avatar size.
+B003,BAD,face_obscured,small,varied,varied,awkward,obscured,1,medium,varied,obscured,varied,"Camera sees the subject mostly from behind, hiding facial identity."
+B004,BAD,group,small,varied,varied,group,mixed,4,medium,varied,group,varied,Graduation action scene contains many people and no isolated face.
+B005,BAD,busy_context,small,mixed,distracting,wide,partial,1,high,casual,front,no,Art installation and surrounding objects overwhelm the small central person.
+B006,BAD,mirror_selfie,small,mixed,mirror or room,full body,partial,1,medium,casual,mirror selfie,yes,Mirror and visible phone dominate an informal bathroom selfie.
+B007,BAD,group,small,varied,varied,group,mixed,4,medium,varied,group,varied,Multiple people at a table compete for the profile's single subject.
+B008,BAD,couple,medium,varied,varied,two-person,clear,2,medium,varied,shared frame,varied,Vacation selfie gives two people equal prominence and distracting setting.
+B009,BAD,face_obscured,small,varied,varied,awkward,obscured,1,medium,varied,obscured,varied,"Scarf covers most of the face, leaving too little facial information."
+B010,BAD,face_obscured,small,varied,varied,awkward,obscured,1,medium,varied,obscured,varied,Umbrella and market context obscure the face and distract heavily.
+B011,BAD,tiny_face,tiny,varied,dominant scene,wide or full body,unclear,1,medium,varied,distant,no,Action photograph shows a distant back-facing person with no useful facial detail.
+B012,BAD,group,small,varied,varied,group,mixed,4,medium,varied,group,varied,Conference photo has three competing people rather than one clear subject.
+B013,BAD,face_obscured,small,varied,varied,awkward,obscured,1,medium,varied,obscured,varied,Phone hides the selfie taker's face in a busy market scene.
+B014,BAD,tiny_face,tiny,varied,dominant scene,wide or full body,unclear,1,medium,varied,distant,no,People are tiny within a landscape and vanish in a circular avatar.
+B015,BAD,mirror_selfie,small,mixed,mirror or room,full body,partial,1,medium,casual,mirror selfie,yes,Full-length mirror selfie exposes phone and makes the face far too small.
+B016,BAD,group,small,varied,varied,group,mixed,4,medium,varied,group,varied,Large outdoor group offers no identifiable single subject.
+B017,BAD,couple,medium,varied,varied,two-person,clear,2,medium,varied,shared frame,varied,Beach snapshot emphasizes two people and distant activity over one face.
+B018,BAD,tiny_face,tiny,varied,dominant scene,wide or full body,unclear,1,medium,varied,distant,no,Hospital scene places the person far away with an obscured face.
+B019,BAD,tiny_face,tiny,varied,dominant scene,wide or full body,unclear,1,medium,varied,distant,no,Hiker's face is tiny within the scenic full-body photograph.
+B020,BAD,mirror_selfie,small,mixed,mirror or room,full body,partial,1,medium,casual,mirror selfie,yes,Phone blocks face in a full-body bedroom mirror selfie.
+B021,BAD,group,small,varied,varied,group,mixed,4,medium,varied,group,varied,Archival group photograph has many competing faces and no primary avatar subject.
+B022,BAD,group,small,varied,varied,group,mixed,4,medium,varied,group,varied,Crowded group selfie offers several equally prominent faces.
+B023,BAD,extreme_angle,large,harsh,indoor,extreme close-up,partial,1,medium,casual,low angle,yes,Extreme low angle and high contrast distort and obscure the face.
+B024,BAD,couple,medium,varied,varied,two-person,clear,2,medium,varied,shared frame,varied,Adult and child share the frame with competing attention and clutter.
+B025,BAD,group,small,varied,varied,group,mixed,4,medium,varied,group,varied,Wide social selfie squeezes many people into an unusable avatar crop.
+B026,BAD,face_obscured,small,varied,varied,awkward,obscured,1,medium,varied,obscured,varied,Camera covers much of the subject's face in a field snapshot.
+B027,BAD,sunglasses,medium,good,outdoor,head and shoulders,obscured,1,high,casual,front,yes,Dark sunglasses conceal eyes despite otherwise usable portrait framing.
+B028,BAD,group,small,varied,varied,group,mixed,4,medium,varied,group,varied,Event selfie includes several people shoulder to shoulder.
+B029,BAD,low_light,large,dim,dark,head and shoulders,partial,1,medium,varied,front,no,Strong backlight turns face dark and loses key facial detail.
+B030,BAD,severe_crop,partial,mixed,room,severe crop,partial,1,medium,casual,off-center,yes,Only the top of the face enters an accidental-looking frame.
+B031,BAD,group,small,varied,varied,group,mixed,4,medium,varied,group,varied,Outdoor group scene has several people and no dominant face.
+B032,BAD,face_obscured,small,varied,varied,awkward,obscured,1,medium,varied,obscured,varied,Headset covers the eyes and much of the face.
+B033,BAD,face_obscured,small,varied,varied,awkward,obscured,1,medium,varied,obscured,varied,Phone and framing hide the face in a casual indoor selfie.
+B034,BAD,couple,medium,varied,varied,two-person,clear,2,medium,varied,shared frame,varied,Well-exposed couple photograph still leaves two equal profile subjects.
+B035,BAD,tiny_face,tiny,varied,dominant scene,wide or full body,unclear,1,medium,varied,distant,no,Full-length athlete against large backdrop has too little face for avatar use.
+B036,BAD,tiny_face,tiny,varied,dominant scene,wide or full body,unclear,1,medium,varied,distant,no,Person occupies a small part of an outdoor full-body scene.
+B037,BAD,group,small,varied,varied,group,mixed,4,medium,varied,group,varied,Historical group photograph provides no clear single profile subject.
+B038,BAD,tiny_face,tiny,varied,dominant scene,wide or full body,unclear,1,medium,varied,distant,no,Distant person amid scenery would be unrecognizable when reduced.
+B039,BAD,tiny_face,tiny,varied,dominant scene,wide or full body,unclear,1,medium,varied,distant,no,Full-body subject appears narrow and far from the camera.
+B040,BAD,couple,medium,varied,varied,two-person,clear,2,medium,varied,shared frame,varied,Vacation selfie centers two people with sunglasses and coastal background.

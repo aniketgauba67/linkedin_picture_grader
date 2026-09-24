@@ -30,6 +30,16 @@ data/*
 # every image came from, under what licence, and who took it. Losing it
 # means a corpus nobody can prove the provenance of.
 !data/manifest.csv
+# Same reasoning for the validation set's provenance, and the same
+# two-step shape it needs: re-include the directory, exclude its
+# contents, then name the files that are records rather than pixels.
+# The Wikimedia images carry per-file licences including ShareAlike, so
+# sources.csv is the only thing that makes redistribution checkable.
+!data/validation/
+data/validation/*
+!data/validation/sources.csv
+!data/validation/labels.csv
+!data/validation/README.md
 # `models/*` rather than `models/`: git cannot re-include a file whose
 # PARENT DIRECTORY is excluded, so a bare `models/` would make the
 # negations below silently do nothing - and `git add -A` would skip the

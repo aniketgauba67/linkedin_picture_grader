@@ -115,6 +115,12 @@ const CLAIMS = [
   // continuations, not `//` line comments, so a phrase that spans two
   // `//` lines can never match.
   ['training/collect-corpus.ts', 'the pre-filter says why it is not a duplicate check', "protects the bandwidth, and neither can do the other's job"],
+
+  // --- the validation wall ---
+  ['training/paths.ts', 'the wall says why it is mechanical, not remembered', 'A held-out set is only held out until the first time someone looks at it'],
+  ['training/paths.ts', 'and that a leak cannot be undone', 'the only honest fix is 125 new hand-labelled images'],
+  ['training/fit-isolation.test.ts', 'neither half of the guard is sufficient alone', 'Neither catches everything alone'],
+  ['training/extract-validation.ts', 'says why both pre-checks run before any write', 'because both failures are silent otherwise'],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**
