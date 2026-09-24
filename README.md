@@ -111,6 +111,35 @@ daily, shortly after the pg_cron sweep.
 `deletePhoto` (the user-facing button) does the same two steps in one
 call, object first.
 
+## Native dependency sizing (read before changing install config)
+
+Two separate traps, both of which only appear on the Linux build machine:
+
+**1. GPU execution providers.** `onnxruntime-node`'s postinstall reads a
+platform-keyed manifest. Every platform requires `[]` *except*
+`linux/x64`, which defaults to `["cuda12"]` and downloads
+`Microsoft.ML.OnnxRuntime.Gpu.Linux` from nuget - CUDA and TensorRT
+`.so` files. There is no GPU on Vercel; SCRFD runs on the CPU binaries
+already inside the npm package. The repo `.npmrc` sets
+`onnxruntime-node-install=skip` (and the deprecated `-install-cuda=skip`,
+since package.json allows `^1.20.1`). **That file is load-bearing - do
+not delete it as redundant defaults.**
+
+⚠️ **Any Dockerfile or build context that runs `pnpm install` must copy
+`.npmrc` in first**, or the setting silently does not apply and the GPU
+providers come back.
+
+**2. Cross-platform binaries.** The npm package ships prebuilt binaries
+for *all* platforms in one tarball - 287MB, of which win32 is 133MB of
+DirectML/dxcompiler DLLs. A Vercel function needs only linux/x64 (~46MB).
+`outputFileTracingExcludes` in `apps/web/next.config.ts` drops the rest,
+which is the difference between ~49MB and ~288MB against the 250MB
+function limit.
+
+CI asserts no `libonnxruntime_providers_*` lands on disk. That assertion
+runs on `ubuntu-latest`, which is the only place the problem is
+reproducible.
+
 ## The face detector model is in Git LFS
 
 `models/det_500m.onnx` is SCRFD-500m (2.4MB, 5 keypoints), stored through

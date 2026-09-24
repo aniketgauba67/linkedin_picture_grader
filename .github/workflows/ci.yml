@@ -15,6 +15,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # Belt and braces with the repo .npmrc, and it documents the intent at
+  # the CI layer. This runner is linux/x64 - the ONE platform whose
+  # onnxruntime-node manifest defaults to ["cuda12"] and pulls the GPU
+  # execution providers from nuget. There is no GPU here or on Vercel.
+  ONNXRUNTIME_NODE_INSTALL: skip
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
   # Turbo's cache is per-runner and every run gets a fresh one, so a
   # local cache buys nothing here. Remote caching is deliberately NOT
   # configured: a misconfigured one serves stale results that look like
@@ -62,6 +69,22 @@ jobs:
         # postinstall runs scripts/verify-models.mjs, which hashes the
         # pinned artifacts and fails loudly on an unresolved LFS pointer.
         run: pnpm install --frozen-lockfile
+
+      # This is the platform where the GPU providers would land, so it is
+      # the only place the skip can actually be verified. Locally on
+      # macOS the manifest is empty and the bug is invisible.
+      - name: Assert no GPU execution providers were installed
+        run: |
+          echo "platform: $(node -p "process.platform + '/' + process.arch")"
+          found=$(find node_modules -name 'libonnxruntime_providers_*' 2>/dev/null | head -20)
+          if [ -n "$found" ]; then
+            echo "::error::GPU execution providers were installed:"
+            echo "$found"
+            du -sh node_modules/.pnpm/onnxruntime-node*/node_modules/onnxruntime-node 2>/dev/null || true
+            exit 1
+          fi
+          echo "none present."
+          echo "onnxruntime-node on disk: $(du -sh node_modules/.pnpm/onnxruntime-node*/node_modules/onnxruntime-node 2>/dev/null | cut -f1)"
 
       - name: Build
         run: pnpm build
