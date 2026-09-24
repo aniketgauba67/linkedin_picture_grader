@@ -107,6 +107,7 @@ const CLAIMS = [
   ['training/pexels.ts', 'the quota is read from headers, not counted locally', 'A local counter is wrong the moment anything else uses the same key'],
   ['training/manifest.ts', 'manifest.csv is the committed provenance record', 'It holds no pixels'],
   ['training/README.md', 'the bad queries have a section explaining themselves', '### Why the BAD queries exist'],
+  ['training/collect-corpus.ts', 'a right total can hide a short variant', 'A total that comes out right can still hide a variant that came up short'],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**

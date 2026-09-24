@@ -116,6 +116,13 @@ describe('collect', () => {
     expect(summary.collected).toBe(10);
     expect(summary.failures).toEqual([]);
 
+    // The spread and the quota come out of the run itself, not a fixture.
+    expect(summary.outcomes.map((o) => [o.query, o.have, o.target])).toEqual([
+      ['professional headshot', 5, 5],
+      ['car selfie', 5, 5],
+    ]);
+    expect(summary.quota.remaining).toBeNull();
+
     const manifest = readManifest(join(dataDir, 'manifest.csv'));
     expect(manifest.problems).toEqual([]);
     expect(manifest.rows).toHaveLength(10);
@@ -426,22 +433,61 @@ describe('parseArgs', () => {
 });
 
 describe('renderSummary', () => {
-  it('prints every failure rather than a count', () => {
-    const text = renderSummary(
+  const sample = {
+    collected: 3,
+    skippedAlreadyHave: 1,
+    skippedDuplicateHash: 2,
+    failures: [
       {
-        collected: 3,
-        skippedAlreadyHave: 1,
-        skippedDuplicateHash: 2,
-        failures: [
-          { url: 'https://x/1', query: 'car selfie', stage: 'extract', reason: 'bad decode' },
-        ],
-        perQuery: new Map([['car selfie', 3]]),
-        stoppedEarly: null,
+        url: 'https://x/1',
+        query: 'car selfie',
+        variant: 'bad' as const,
+        stage: 'extract' as const,
+        reason: 'bad decode',
       },
+    ],
+    outcomes: [
+      { query: 'professional headshot', variant: 'good' as const, target: 12, have: 12, taken: 2 },
+      { query: 'car selfie', variant: 'bad' as const, target: 8, have: 3, taken: 1 },
+    ],
+    quota: { limit: 200, remaining: 173, reset: 1774000000, resetInSeconds: 2400 },
+    stoppedEarly: null,
+  };
+
+  it('prints every failure rather than a count, and says which variant it came from', () => {
+    const text = renderSummary(sample, 150);
+    expect(text).toMatch(/\[extract\] "car selfie"\s+https:\/\/x\/1/);
+    expect(text).toMatch(/bad decode/);
+    expect(text).toMatch(/^ {2}bad \(1\)$/m);
+    expect(text).toMatch(/manifest now holds\s+15 of 150/);
+  });
+
+  it('prints the spread per query against its target, and flags a shortfall', () => {
+    const text = renderSummary(sample, 150);
+    expect(text).toMatch(/professional headshot\s+12 \/\s+12\s+\[\+2\]/);
+    // car selfie got 3 of 8, which must not pass unremarked.
+    expect(text).toMatch(/car selfie\s+3 \/\s+8\s+\[\+1\]\s+! short/);
+    expect(text).toMatch(/TOTAL\s+15 \/\s+20/);
+  });
+
+  it('prints the achieved variant shares against the planned ones', () => {
+    const text = renderSummary(sample, 150);
+    expect(text).toMatch(/good\s+80\.0%\s+\(planned 30\.0%\)/);
+    expect(text).toMatch(/bad\s+20\.0%\s+\(planned 30\.0%\)/);
+  });
+
+  it('prints the rate-limit headroom from the last response', () => {
+    const text = renderSummary(sample, 150);
+    expect(text).toMatch(/X-Ratelimit-Limit\s+200/);
+    expect(text).toMatch(/X-Ratelimit-Remaining\s+173/);
+    expect(text).toMatch(/X-Ratelimit-Reset\s+1774000000\s+\(in ~40m\)/);
+  });
+
+  it('says so when no response carried rate-limit headers', () => {
+    const text = renderSummary(
+      { ...sample, quota: { limit: null, remaining: null, reset: null, resetInSeconds: null } },
       150,
     );
-    expect(text).toMatch(/\[extract\] https:\/\/x\/1/);
-    expect(text).toMatch(/bad decode/);
-    expect(text).toMatch(/manifest now holds\s+3 of 150/);
+    expect(text).toMatch(/no API response carried rate-limit headers/);
   });
 });

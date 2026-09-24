@@ -34,7 +34,7 @@ import {
   type ManifestRow,
 } from './manifest.js';
 import { PexelsClient, PexelsError, pickSource, type PexelsPhoto } from './pexels.js';
-import { planQuota, type QuerySpec, type QuotaRow } from './queries.js';
+import { planQuota, VARIANT_SHARES, type QuerySpec, type QuotaRow, type QueryVariant } from './queries.js';
 
 export const DEFAULT_TOTAL = 150;
 export const DATA_DIR = 'data';
@@ -59,8 +59,30 @@ const DOWNLOAD_CONCURRENCY = 4;
 export interface Failure {
   readonly url: string;
   readonly query: string;
+  /** Which net caught it. A decode failure concentrated in one variant
+   *  is a different problem from one scattered across all four. */
+  readonly variant: QueryVariant;
   readonly stage: 'download' | 'extract' | 'validate';
   readonly reason: string;
+}
+
+/** What one query actually produced, against what it was asked for. */
+export interface QueryOutcome {
+  readonly query: string;
+  readonly variant: QueryVariant;
+  readonly target: number;
+  /** Total in the manifest for this query, earlier runs included. */
+  readonly have: number;
+  /** Taken during this run alone. */
+  readonly taken: number;
+}
+
+/** The rate-limit position as of the last API response. */
+export interface QuotaReport {
+  readonly limit: number | null;
+  readonly remaining: number | null;
+  readonly reset: number | null;
+  readonly resetInSeconds: number | null;
 }
 
 export interface CollectSummary {
@@ -68,7 +90,8 @@ export interface CollectSummary {
   readonly skippedAlreadyHave: number;
   readonly skippedDuplicateHash: number;
   readonly failures: readonly Failure[];
-  readonly perQuery: ReadonlyMap<string, number>;
+  readonly outcomes: readonly QueryOutcome[];
+  readonly quota: QuotaReport;
   readonly stoppedEarly: string | null;
 }
 
@@ -116,6 +139,7 @@ export async function collect(client: PexelsClient, options: CollectOptions = {}
   const quota = planQuota(total, options.queries);
   const failures: Failure[] = [];
   const perQuery = new Map<string, number>(seen.perQuery);
+  const takenPerQuery = new Map<string, number>();
   let collected = 0;
   let skippedAlreadyHave = 0;
   let skippedDuplicateHash = 0;
@@ -156,6 +180,7 @@ export async function collect(client: PexelsClient, options: CollectOptions = {}
       });
       collected += taken;
       perQuery.set(row.query, already + taken);
+      takenPerQuery.set(row.query, taken);
     } catch (error) {
       if (error instanceof PexelsError && error.status === 429) {
         // Stop clean. The manifest already holds everything fetched so
@@ -171,7 +196,23 @@ export async function collect(client: PexelsClient, options: CollectOptions = {}
     }
   }
 
-  return { collected, skippedAlreadyHave, skippedDuplicateHash, failures, perQuery, stoppedEarly };
+  const outcomes: QueryOutcome[] = quota.map((row) => ({
+    query: row.query,
+    variant: row.variant,
+    target: row.target,
+    have: perQuery.get(row.query) ?? 0,
+    taken: takenPerQuery.get(row.query) ?? 0,
+  }));
+
+  return {
+    collected,
+    skippedAlreadyHave,
+    skippedDuplicateHash,
+    failures,
+    outcomes,
+    quota: { ...client.quota, resetInSeconds: client.resetInSeconds },
+    stoppedEarly,
+  };
 }
 
 interface QueryContext {
@@ -229,6 +270,7 @@ async function collectForQuery(
             ctx.failures.push({
               url: photo.url,
               query: row.query,
+              variant: row.variant,
               stage: 'download',
               reason: error instanceof Error ? error.message : 'unknown download error',
             });
@@ -278,6 +320,7 @@ async function ingest(
     ctx.failures.push({
       url: photo.url,
       query: row.query,
+      variant: row.variant,
       stage: 'extract',
       reason: error instanceof Error ? error.message : 'unknown extraction error',
     });
@@ -289,6 +332,7 @@ async function ingest(
     ctx.failures.push({
       url: photo.url,
       query: row.query,
+      variant: row.variant,
       stage: 'validate',
       reason: `non-finite measurement in ${nonFinite.join(', ')}`,
     });
@@ -300,6 +344,7 @@ async function ingest(
     ctx.failures.push({
       url: photo.url,
       query: row.query,
+      variant: row.variant,
       stage: 'validate',
       reason: parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; '),
     });
@@ -360,6 +405,70 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   return { total, dryRun };
 }
 
+function pad(value: string | number, width: number): string {
+  return String(value).padStart(width);
+}
+
+/**
+ * The spread, per query and per variant, against the plan.
+ *
+ * A total that comes out right can still hide a variant that came up
+ * short - and the BAD variant coming up short is the one failure that
+ * matters, because it is the only source of the 1-3 range.
+ */
+function renderSpread(summary: CollectSummary): string[] {
+  if (summary.outcomes.length === 0) return [];
+
+  const lines = ['', 'spread achieved  (have / target, this run in brackets)', '-----------------------------------------------------'];
+  const width = Math.max(...summary.outcomes.map((o) => o.query.length), 8);
+
+  const variants = [...new Set(summary.outcomes.map((o) => o.variant))];
+  let haveAll = 0;
+  let targetAll = 0;
+
+  for (const variant of variants) {
+    const rows = summary.outcomes.filter((o) => o.variant === variant);
+    const have = rows.reduce((s, r) => s + r.have, 0);
+    const target = rows.reduce((s, r) => s + r.target, 0);
+    haveAll += have;
+    targetAll += target;
+
+    lines.push(`  ${variant}`);
+    for (const row of rows) {
+      const short = row.have < row.target ? '  ! short' : '';
+      lines.push(
+        `    ${row.query.padEnd(width)} ${pad(row.have, 4)} / ${pad(row.target, 3)}  [+${row.taken}]${short}`,
+      );
+    }
+    lines.push(`    ${'subtotal'.padEnd(width)} ${pad(have, 4)} / ${pad(target, 3)}`);
+  }
+
+  const pct = (n: number): string => (haveAll === 0 ? '  0.0%' : `${((n / haveAll) * 100).toFixed(1).padStart(5)}%`);
+  lines.push('', `  ${'TOTAL'.padEnd(width + 2)} ${pad(haveAll, 4)} / ${pad(targetAll, 3)}`);
+  lines.push('', '  variant shares achieved vs planned');
+  for (const variant of variants) {
+    const have = summary.outcomes.filter((o) => o.variant === variant).reduce((s, r) => s + r.have, 0);
+    const planned = (VARIANT_SHARES[variant] ?? 0) * 100;
+    lines.push(`    ${variant.padEnd(10)} ${pct(have)}  (planned ${planned.toFixed(1)}%)`);
+  }
+  return lines;
+}
+
+function renderQuota(quota: QuotaReport): string[] {
+  if (quota.limit === null && quota.remaining === null) {
+    return ['', 'rate limit', '----------', '  no API response carried rate-limit headers'];
+  }
+  const minutes = quota.resetInSeconds === null ? null : Math.round(quota.resetInSeconds / 60);
+  return [
+    '',
+    'rate limit  (as of the last API response)',
+    '-----------------------------------------',
+    `  X-Ratelimit-Limit      ${quota.limit ?? '(absent)'}`,
+    `  X-Ratelimit-Remaining  ${quota.remaining ?? '(absent)'}`,
+    `  X-Ratelimit-Reset      ${quota.reset ?? '(absent)'}${minutes === null ? '' : `  (in ~${minutes}m)`}`,
+  ];
+}
+
 export function renderSummary(summary: CollectSummary, total: number): string {
   const lines = [
     '',
@@ -371,16 +480,30 @@ export function renderSummary(summary: CollectSummary, total: number): string {
     `  failures                 ${summary.failures.length}`,
   ];
 
-  const have = [...summary.perQuery.values()].reduce((s, n) => s + n, 0);
+  const have = summary.outcomes.reduce((s, o) => s + o.have, 0);
   lines.push(`  manifest now holds       ${have} of ${total}`);
 
+  lines.push(...renderSpread(summary));
+
   if (summary.failures.length > 0) {
-    lines.push('', 'failures (reported, not skipped silently)');
+    lines.push('', 'failures (reported, not skipped silently)', '-----------------------------------------');
+    // Grouped by variant: a decode failure concentrated in one variant
+    // is a rubric-shaped problem, one scattered across all four is not.
+    const byVariant = new Map<QueryVariant, Failure[]>();
     for (const failure of summary.failures) {
-      lines.push(`  [${failure.stage}] ${failure.url}`);
-      lines.push(`      ${failure.reason}`);
+      byVariant.set(failure.variant, [...(byVariant.get(failure.variant) ?? []), failure]);
+    }
+    for (const [variant, group] of byVariant) {
+      lines.push(`  ${variant} (${group.length})`);
+      for (const failure of group) {
+        lines.push(`    [${failure.stage}] "${failure.query}"  ${failure.url}`);
+        lines.push(`        ${failure.reason}`);
+      }
     }
   }
+
+  lines.push(...renderQuota(summary.quota));
+
   if (summary.stoppedEarly !== null) {
     lines.push('', `stopped early: ${summary.stoppedEarly}`);
   }
