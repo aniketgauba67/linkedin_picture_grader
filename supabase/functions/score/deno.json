@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "@pps/scoring": "../../../packages/scoring/dist/index.js"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitAny": true
+  }
+}

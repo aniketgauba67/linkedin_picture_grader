@@ -1,0 +1,43 @@
+{
+  "name": "@pps/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "test": "vitest run",
+    "lint": "eslint src test",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "gen:types": "supabase gen types typescript --local > src/database.types.ts",
+    "clean": "rm -rf dist .turbo",
+    "gen:types:pg": "node scripts/generate-types.mjs \"$PPS_TEST_DATABASE_URL\"",
+    "test:integration": "vitest run test/",
+    "db:start": "./scripts/pg-test-server.sh start",
+    "db:stop": "./scripts/pg-test-server.sh stop",
+    "db:destroy": "./scripts/pg-test-server.sh destroy",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@pps/schema": "workspace:*",
+    "@supabase/supabase-js": "^2.47.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "pg": "^8.13.1",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  }
+}

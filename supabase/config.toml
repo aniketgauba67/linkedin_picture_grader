@@ -1,0 +1,34 @@
+project_id = "linkedin_picture_grader"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+# Matches the linked project (Postgres 17). The schema needs 15 or newer
+# regardless: the NULLS NOT DISTINCT constraint on assessments does not
+# exist before 15.
+major_version = 17
+
+[studio]
+enabled = true
+port = 54323
+
+[storage]
+enabled = true
+# Matches MAX_UPLOAD_BYTES in @pps/schema. Images go browser -> Storage
+# directly via a signed URL and never touch a Vercel route.
+file_size_limit = "10MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+
+[functions.score]
+# Scoring is pure arithmetic on a cached vector, so it needs no secrets and
+# can answer unauthenticated callers behind RLS.
+verify_jwt = false

@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    // Widened from src/: this config only typechecks, it never emits, so
+    // the test harness and vitest config are in scope too.
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts", "scripts/**/*.mjs"]
+}
