@@ -1,3 +1,8 @@
 packages:
   - "apps/*"
   - "packages/*"
+  # Not a shipped package - it holds the corpus collector and, later, the
+  # distillation work. It is a workspace member so it can import
+  # @pps/features and be covered by the same typecheck and lint as
+  # everything else, not so anything can depend on it.
+  - "training"

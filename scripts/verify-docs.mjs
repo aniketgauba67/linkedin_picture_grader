@@ -96,6 +96,17 @@ const CLAIMS = [
   ['packages/eval/src/ceiling.ts', 'the ceiling explains what it makes visible', 'A model cannot be more consistent with the labels than the labels are with themselves'],
   ['packages/eval/src/ceiling.ts', 'comparing unlike statistics is called out', 'produces a chart that means nothing'],
   ['packages/eval/src/labels.ts', 'the parser says why it is schema-agnostic', 'deliberately schema-agnostic about axis names'],
+
+  // --- corpus collection ---
+  ['.gitignore', 'data/* is a pattern, not a typo', 'git cannot re-include a file whose PARENT DIRECTORY is excluded'],
+  ['training/queries.ts', 'says why the bad queries exist', 'nobody uploads an image and labels it'],
+  ['training/queries.ts', 'a query variant is not a label', 'These are query terms, not labels'],
+  ['training/collect-corpus.ts', 'extraction runs before any labelling spend', 'Labelling is the only irreversible spend'],
+  ['training/collect-corpus.ts', 'keeping the vectors is justified against the architecture rule', 'retraining must never re-run it'],
+  ['training/pexels.ts', 'the two hosts have different rules', 'a CDN. Not part of the quota'],
+  ['training/pexels.ts', 'the quota is read from headers, not counted locally', 'A local counter is wrong the moment anything else uses the same key'],
+  ['training/manifest.ts', 'manifest.csv is the committed provenance record', 'It holds no pixels'],
+  ['training/README.md', 'the bad queries have a section explaining themselves', '### Why the BAD queries exist'],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**

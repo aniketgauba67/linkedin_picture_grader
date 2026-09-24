@@ -21,7 +21,15 @@ coverage/
 !.env.example
 
 # Training data is never committed, and neither is the model corpus.
-data/
+# `data/*` rather than `data/`, for the same reason as `models/*` below:
+# git cannot re-include a file whose PARENT DIRECTORY is excluded, so a
+# bare `data/` would make the negation silently do nothing and the
+# provenance record would never be committed.
+data/*
+# The exception. manifest.csv holds no pixels - it is the record of where
+# every image came from, under what licence, and who took it. Losing it
+# means a corpus nobody can prove the provenance of.
+!data/manifest.csv
 # `models/*` rather than `models/`: git cannot re-include a file whose
 # PARENT DIRECTORY is excluded, so a bare `models/` would make the
 # negations below silently do nothing - and `git add -A` would skip the

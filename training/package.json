@@ -1,0 +1,25 @@
+{
+  "name": "@pps/training",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "//": "Corpus collection and, later, distillation. Not shipped: nothing in apps/ or packages/ may import this.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "collect": "node dist/collect-corpus.js",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@pps/features": "workspace:*",
+    "@pps/schema": "workspace:*",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  }
+}

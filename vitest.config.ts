@@ -5,6 +5,6 @@ import { defineConfig } from 'vitest/config';
 // vitest.config.ts so it can be run in isolation.
 export default defineConfig({
   test: {
-    projects: ['packages/*', 'apps/*'],
+    projects: ['packages/*', 'apps/*', 'training'],
   },
 });
