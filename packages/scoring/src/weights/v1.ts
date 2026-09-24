@@ -83,8 +83,23 @@ export const WEIGHTS_V1: Weights = {
   compatibleExtractorVersion: 'v5',
 
   maps: {
-    // Calibrated against the 1024px analysis plane. Changing
-    // ANALYSIS_EDGE invalidates every one of these.
+    /**
+     * UNFITTED. Still the original hand-set ladder.
+     *
+     * The 125-image calibration set could not fit either sharpness map.
+     * The frame basis had 20 usable images and a cross-validated
+     * Spearman of -0.005 - no signal at all - and the eye-region basis
+     * reached 0.248 and topped out at 3.
+     *
+     * The cause is the corpus, not the measurement: Commons thumbnails
+     * at a median 0.15MP have neither the range nor the detail to
+     * separate genuinely sharp from genuinely blurred. Fitting these
+     * needs native-resolution photographs, 2MP and up, spanning both
+     * ends - which is the Pexels collection, not this set.
+     *
+     * Calibrated against the 1024px analysis plane. Changing
+     * ANALYSIS_EDGE invalidates every one of these.
+     */
     sharpnessFrame: [
       [0, 1],
       [40, 2],
@@ -102,21 +117,49 @@ export const WEIGHTS_V1: Weights = {
       [300, 4],
       [700, 5],
     ],
-    // Usable luma span out of 255.
+    /**
+     * Over `lightingRaw` (1 = ideal, approaching 0 = worst), NOT over
+     * dynamicRange.
+     *
+     * THE DOMAIN CHANGED. These used to be luma-span values out of 255;
+     * lightingRaw is a ratio in (0, 1]. A knot table left in the old
+     * units does not fail, it clamps every photograph to the first knot
+     * and hands out a flat score of 1 - which is exactly what the test
+     * suite caught when the domain moved and this table had not.
+     *
+     * Provisional until the refit lands.
+     */
     lighting: [
       [0, 1],
-      [80, 2],
-      [130, 3],
-      [170, 4],
-      [205, 5],
+      [0.35, 2],
+      [0.6, 3],
+      [0.8, 4],
+      [0.95, 5],
     ],
-    // Megapixels. LinkedIn renders at 400px, but crops need headroom.
+    /**
+     * SPEC-DERIVED, NOT FITTED. Do not learn this map.
+     *
+     * Shorter edge in pixels, against LinkedIn's published requirement:
+     * minimum 400x400, recommended 800x800, maximum 7680x4320 / 8MB.
+     * Below 200px is under their floor; 400 meets the minimum but is
+     * soft on a retina display; 800 is the recommendation and nothing
+     * above it helps, because LinkedIn downscales to its own render
+     * size regardless.
+     *
+     * The shorter edge rather than megapixels, because a square avatar
+     * crop is limited by the short side: a 4000x400 panorama is 1.6
+     * megapixels and 400 usable pixels.
+     *
+     * An attempt to fit this against the 125-image calibration set
+     * produced a map topping out at 4 - no labelled photograph was
+     * large enough to earn a 5 - which would have capped every real
+     * upload from 1.4MP to 40MP at 4 forever. A published requirement
+     * is not a matter of taste and there is nothing here to learn.
+     */
     resolution: [
-      [0, 1],
-      [0.15, 2],
-      [0.4, 3],
-      [1.0, 4],
-      [2.0, 5],
+      [200, 1],
+      [400, 3],
+      [800, 5],
     ],
     // Over framingRaw (1 = ideal, 0 = worst). Monotone in goodness.
     framing: [

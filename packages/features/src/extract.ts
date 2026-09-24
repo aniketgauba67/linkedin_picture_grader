@@ -1,6 +1,6 @@
 import type { ComputedFeatures } from '@pps/schema';
 import { ComputedFeatures as ComputedFeaturesSchema, EXTRACTOR_VERSION } from '@pps/schema';
-import type { LumaPlane, RgbPlane } from './luma.js';
+import type { LumaPlane, Region, RgbPlane } from './luma.js';
 import { cropPlane } from './luma.js';
 import { laplacianVariance } from './sharpness.js';
 import { lightingStats } from './lighting.js';
@@ -112,6 +112,56 @@ function measureEyeRegion(plane: LumaPlane, face: FaceObservation | null): numbe
   return laplacianVariance(eyes);
 }
 
+/** The face box is where the subject is; this is where we guess it is
+ *  when no face was found. Central third, which is where a portrait's
+ *  subject sits far more often than not. */
+export function centralThird(width: number, height: number): Region {
+  return {
+    x: width / 3,
+    y: height / 3,
+    width: width / 3,
+    height: height / 3,
+  };
+}
+
+export interface FaceLighting {
+  readonly faceExposureMean: number;
+  readonly faceClippedHighlights: number;
+  readonly faceClippedShadows: number;
+  readonly faceRegionMeasured: boolean;
+}
+
+/**
+ * Lighting measured on the SUBJECT rather than the frame.
+ *
+ * The same statistics as the whole-frame pass, over a crop. A backlit
+ * portrait is the case that matters: a bright window fills the frame
+ * histogram with a healthy span and a good mean, while the face itself
+ * is a silhouette. Measuring the frame says the lighting is fine.
+ *
+ * Falls back to the central third when there is no face box, and says
+ * which happened - a guess about where a face probably is should not be
+ * indistinguishable from a measurement.
+ */
+export function faceLighting(plane: LumaPlane, face: FaceObservation | null): FaceLighting {
+  const measured = face !== null;
+  const region = measured ? face.box : centralThird(plane.width, plane.height);
+  const crop = cropPlane(plane, region);
+
+  // A crop can come back null or degenerate for a box that fell outside
+  // the frame. Falling back to the whole plane keeps the field finite
+  // and honest rather than emitting a zero that reads as "pitch black".
+  const target = crop === null || crop.width === 0 || crop.height === 0 ? plane : crop;
+  const stats = lightingStats(target);
+
+  return {
+    faceExposureMean: clamp(stats.meanLuma, 0, 255),
+    faceClippedHighlights: clamp(stats.clippedHighlightRatio, 0, 1),
+    faceClippedShadows: clamp(stats.clippedShadowRatio, 0, 1),
+    faceRegionMeasured: measured && crop !== null,
+  };
+}
+
 /**
  * Runs once per image and caches to Postgres. Scoring never calls this:
  * it reads the cached vector and does a dot product. Retraining must
@@ -158,6 +208,7 @@ export async function extractFeatures(image: Buffer): Promise<ComputedFeatures> 
     clippedHighlights: clamp(lighting.clippedHighlightRatio, 0, 1),
     clippedShadows: clamp(lighting.clippedShadowRatio, 0, 1),
     dynamicRange: clamp(lighting.dynamicRange, 0, 255),
+    ...faceLighting(plane, face),
 
     width,
     height,

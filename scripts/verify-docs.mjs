@@ -124,6 +124,16 @@ const CLAIMS = [
   ['training/calibrate.ts', 'in-sample correlation is named as flattering', 'an in-sample number and it always flatters'],
   ['training/calibrate.ts', 'scale invariance is not an exemption from the top-knot check', 'and that is the failure that actually bites'],
   ['training/isotonic-fit.ts', 'two-sided axes are reduced before fitting', 'a monotone fit cannot represent'],
+
+  // --- the two measurement-definition fixes ---
+  ['packages/scoring/src/compute.ts', 'framingRaw says why it is a reciprocal', 'The subtract-and-clamp form saturates'],
+  ['packages/scoring/src/compute.ts', 'and records the measured cost of the old form', '53 of them - 42% of the data piled on one'],
+  ['packages/scoring/src/compute.ts', 'lightingRaw runs on the face, not the frame', 'FIT THE LIGHTING MAP OVER THIS VALUE, never over dynamicRange'],
+  ['packages/scoring/src/weights/v1.ts', 'resolution is spec-derived, not fitted', 'SPEC-DERIVED, NOT FITTED. Do not learn this map'],
+  ['packages/scoring/src/weights/v1.ts', 'sharpness is left unfitted on purpose', 'UNFITTED. Still the original hand-set ladder'],
+  ['packages/scoring/src/weights/v1.ts', 'the lighting map domain changed with the scalar', 'THE DOMAIN CHANGED'],
+  ['packages/schema/src/features.ts', 'face exposure explains the backlit failure', 'a backlit portrait scores well on it while the face itself is unreadable'],
+  ['training/calibrate.ts', 'the distribution check is standing, not ad hoc', 'Printed for EVERY axis on EVERY run'],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**

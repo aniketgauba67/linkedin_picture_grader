@@ -38,6 +38,10 @@ const usable: ComputedFeatures = {
   clippedHighlights: 0.004,
   clippedShadows: 0.002,
   dynamicRange: 198,
+  faceExposureMean: 118,
+  faceClippedHighlights: 0.002,
+  faceClippedShadows: 0.003,
+  faceRegionMeasured: true,
   width: 1600,
   height: 1600,
   faceAreaRatio: 0.16,
@@ -55,7 +59,7 @@ const usable: ComputedFeatures = {
   isGrayscale: false,
   aspectExtreme: false,
   sourceFormat: 'jpeg',
-  extractorVersion: 'v5',
+  extractorVersion: 'v6',
 };
 
 const validScores: AxisScores = {

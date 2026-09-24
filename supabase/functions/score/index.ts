@@ -141,6 +141,13 @@ function readFeatures(vector: Record<string, unknown>): PixelFeatures & {
     eyeRegionMeasured: readFlag(vector, 'eyeRegionMeasured'),
     jpegQualityEstimate: readFeature(vector, 'jpegQualityEstimate'),
     dynamicRange: readFeature(vector, 'dynamicRange'),
+    // Face-box lighting. The lighting axis runs on these, not on the
+    // whole-frame figures above, so a missing one must fail loudly here
+    // rather than score a backlit portrait as well lit.
+    faceExposureMean: readFeature(vector, 'faceExposureMean'),
+    faceClippedHighlights: readFeature(vector, 'faceClippedHighlights'),
+    faceClippedShadows: readFeature(vector, 'faceClippedShadows'),
+    faceRegionMeasured: readFlag(vector, 'faceRegionMeasured'),
     clippedHighlights: readFeature(vector, 'clippedHighlights'),
     clippedShadows: readFeature(vector, 'clippedShadows'),
     faceAreaRatio: readFeature(vector, 'faceAreaRatio'),

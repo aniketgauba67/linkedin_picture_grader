@@ -43,9 +43,34 @@ export const FEATURE_ROLES: Readonly<
   sharpnessEyeRegion: { role: 'axis', note: 'sharpness, eye-region basis' },
   eyeRegionMeasured: { role: 'axis', note: 'sharpness: selects which basis and which map' },
   jpegQualityEstimate: { role: 'axis', note: 'sharpness penalty, and lowers confidence' },
-  exposureMean: { role: 'axis', note: 'lighting: two-sided penalty around the ideal band' },
-  clippedHighlights: { role: 'axis', note: 'lighting: unrecoverable highlight clipping' },
-  clippedShadows: { role: 'axis', note: 'lighting: unrecoverable shadow clipping' },
+  exposureMean: {
+    role: 'diagnostic',
+    note: 'whole-frame mean luma. The lighting axis moved to faceExposureMean, because a backlit portrait has a fine frame histogram and an unreadable face. Kept because the DIFFERENCE between this and faceExposureMean is the backlit signature itself - a signal nothing reads yet.',
+  },
+  faceExposureMean: {
+    role: 'axis',
+    note: 'lighting: the two-sided exposure term, measured inside the face box rather than across the frame',
+  },
+  faceClippedHighlights: {
+    role: 'axis',
+    note: 'lighting: unrecoverable highlight clipping on the face itself',
+  },
+  faceClippedShadows: {
+    role: 'axis',
+    note: 'lighting: unrecoverable shadow clipping on the face itself',
+  },
+  faceRegionMeasured: {
+    role: 'axis',
+    note: 'lighting: says whether the face-box measurements are a measurement or the central-third guess, and lowers confidence when it is the guess',
+  },
+  clippedHighlights: {
+    role: 'diagnostic',
+    note: 'whole-frame highlight clipping. Superseded for scoring by faceClippedHighlights; a blown sky behind a correctly exposed face is not a lighting fault on the portrait.',
+  },
+  clippedShadows: {
+    role: 'diagnostic',
+    note: 'whole-frame shadow clipping. Superseded for scoring by faceClippedShadows, for the same reason as the highlights above.',
+  },
   dynamicRange: { role: 'axis', note: 'lighting: drives the isotonic map' },
   width: { role: 'axis', note: 'resolution, via megapixels' },
   height: { role: 'axis', note: 'resolution, via megapixels' },

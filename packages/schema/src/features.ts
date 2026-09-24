@@ -5,7 +5,7 @@ import { z } from 'zod';
  * column next to the cached vector, not as a field of the vector, so an
  * older row is detected and re-extracted rather than silently mis-scored.
  */
-export const FEATURE_VECTOR_VERSION = 5;
+export const FEATURE_VECTOR_VERSION = 6;
 
 /**
  * The cache key for an extraction, derived from the version rather than
@@ -68,6 +68,32 @@ export const ComputedFeatures = z.object({
   clippedShadows: z.number().finite().min(0).max(1),
   /** Usable luma span between the 1st and 99th percentiles, 0-255. */
   dynamicRange: z.number().finite().min(0).max(255),
+  /**
+   * Mean luma INSIDE THE FACE BOX, 0-255. The one the lighting axis
+   * actually runs on.
+   *
+   * `exposureMean` above is the whole frame, and a backlit portrait
+   * scores well on it while the face itself is unreadable - a bright
+   * window fills the histogram and the subject is a silhouette. The
+   * global figure is kept because it is still the right input for a
+   * whole-image exposure judgement; it is simply not what a person means
+   * when they say the lighting is bad on a portrait.
+   */
+  faceExposureMean: z.number().finite().min(0).max(255),
+  /** Highlight clipping inside the face box, not across the frame. */
+  faceClippedHighlights: z.number().finite().min(0).max(1),
+  /** Shadow clipping inside the face box. */
+  faceClippedShadows: z.number().finite().min(0).max(1),
+  /**
+   * Whether the three fields above came from a real detected face box,
+   * or from the central-third fallback used when no face was found.
+   *
+   * Explicit rather than inferred from faceCount, exactly as
+   * `eyeRegionMeasured` is: the fallback is a guess about where a face
+   * probably is, and a score built on it deserves less confidence than
+   * one built on a measurement.
+   */
+  faceRegionMeasured: z.boolean(),
 
   // --- resolution ----------------------------------------------------
   /** Pixel dimensions of the original image, EXIF rotation applied. */
@@ -204,6 +230,9 @@ export const FEATURE_RULES: Readonly<Record<NumericFeatureField, FieldRule>> = {
   clippedHighlights: { min: 0, max: 1 },
   clippedShadows: { min: 0, max: 1 },
   dynamicRange: { min: 0, max: 255 },
+  faceExposureMean: { min: 0, max: 255 },
+  faceClippedHighlights: { min: 0, max: 1 },
+  faceClippedShadows: { min: 0, max: 1 },
   width: { min: 1, max: Number.MAX_SAFE_INTEGER, int: true },
   height: { min: 1, max: Number.MAX_SAFE_INTEGER, int: true },
   faceAreaRatio: { min: 0, max: 1 },
@@ -228,6 +257,9 @@ export type NumericFeatureField =
   | 'clippedHighlights'
   | 'clippedShadows'
   | 'dynamicRange'
+  | 'faceExposureMean'
+  | 'faceClippedHighlights'
+  | 'faceClippedShadows'
   | 'width'
   | 'height'
   | 'faceAreaRatio'
@@ -249,6 +281,7 @@ export const NUMERIC_FEATURE_FIELDS = Object.keys(
 /** Fields describing the upload rather than measuring it. */
 export const BOOLEAN_FEATURE_FIELDS = [
   'eyeRegionMeasured',
+  'faceRegionMeasured',
   'isGrayscale',
   'aspectExtreme',
 ] as const;

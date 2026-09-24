@@ -56,6 +56,8 @@ export {
   computeAxisScores,
   computeComputedAxes,
   framingRaw,
+  lightingRaw,
+  shorterEdge,
   framingScore,
   lightingScore,
   resolutionScore,

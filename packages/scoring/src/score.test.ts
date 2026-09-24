@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ValidatedPixelFeatures } from './pixel-axes.js';
 import type { JudgedScores } from './compute.js';
-import { bandPenalty, framingRaw } from './compute.js';
+import { bandPenalty, framingRaw, lightingRaw, resolutionScore } from './compute.js';
 import { WEIGHTS_V1 } from './weights/v1.js';
 import { WeightsVersionError, composeScore, score } from './score.js';
 import { CONTEXTS } from './weights.js';
@@ -17,6 +17,10 @@ const GOOD = {
   jpegQualityEstimate: 95,
   exposureMean: 128,
   dynamicRange: 215,
+  faceExposureMean: 118,
+  faceClippedHighlights: 0.002,
+  faceClippedShadows: 0.003,
+  faceRegionMeasured: true,
   clippedHighlights: 0.001,
   clippedShadows: 0.001,
   faceAreaRatio: 0.3,
@@ -34,6 +38,10 @@ const BAD = {
   jpegQualityEstimate: 20,
   exposureMean: 25,
   dynamicRange: 30,
+  faceExposureMean: 118,
+  faceClippedHighlights: 0.002,
+  faceClippedShadows: 0.003,
+  faceRegionMeasured: true,
   clippedShadows: 0.35,
   width: 300,
   height: 300,
@@ -151,9 +159,12 @@ describe('two-sided axes', () => {
     }
   });
 
-  it('penalises exposure on both sides, which was previously unused', () => {
-    const dark = score({ features: { ...GOOD, exposureMean: 20 } as ValidatedPixelFeatures });
-    const bright = score({ features: { ...GOOD, exposureMean: 245 } as ValidatedPixelFeatures });
+  it('penalises FACE exposure on both sides, not whole-frame exposure', () => {
+    // faceExposureMean, not exposureMean: a backlit portrait has a
+    // healthy frame histogram and an unreadable face, and the axis has
+    // to score the face.
+    const dark = score({ features: { ...GOOD, faceExposureMean: 20 } as ValidatedPixelFeatures });
+    const bright = score({ features: { ...GOOD, faceExposureMean: 245 } as ValidatedPixelFeatures });
     const middle = score({ features: GOOD });
     // axes is partial now - the degraded path carries only four - so
     // read through a helper that fails loudly if an axis is absent.
@@ -164,6 +175,13 @@ describe('two-sided axes', () => {
     };
     expect(lighting(middle)).toBeGreaterThan(lighting(dark));
     expect(lighting(middle)).toBeGreaterThan(lighting(bright));
+
+    // The whole-frame figure must NOT move the axis any more. This is
+    // the backlit case: frame says fine, face says silhouette.
+    const backlit = score({
+      features: { ...GOOD, exposureMean: 200, faceExposureMean: 30 } as ValidatedPixelFeatures,
+    });
+    expect(lighting(backlit)).toBeLessThan(lighting(middle));
   });
 
   it('bandPenalty is zero inside the band and grows outside it', () => {
@@ -192,5 +210,100 @@ describe('the sharpness basis is never coalesced', () => {
       eyeRegionMeasured: false,
     } as ValidatedPixelFeatures;
     expect(score({ features: unmeasured }).axes.sharpness).toBe(5);
+  });
+});
+
+describe('framingRaw saturation', () => {
+  // The bug this replaced: clamp01(1 - (ratio + off)) returned exactly 0
+  // for every photograph past a point, and 53 of 125 calibration images
+  // landed there carrying human labels from 1 to 4.
+  const off = (x: number): ValidatedPixelFeatures =>
+    ({ ...GOOD, faceAreaRatio: 0.3, faceCenterOffsetX: x, faceCenterOffsetY: 0 }) as ValidatedPixelFeatures;
+
+  it('keeps badly cropped and catastrophically cropped apart', () => {
+    const bad = framingRaw(off(0.6), WEIGHTS_V1);
+    const worse = framingRaw(off(1.2), WEIGHTS_V1);
+    const awful = framingRaw(off(4), WEIGHTS_V1);
+    expect(bad).toBeGreaterThan(worse);
+    expect(worse).toBeGreaterThan(awful);
+    expect(awful).toBeGreaterThan(0);
+  });
+
+  it('never saturates, however extreme the penalty', () => {
+    const extreme = framingRaw(off(1000), WEIGHTS_V1);
+    expect(extreme).toBeGreaterThan(0);
+    expect(Number.isFinite(extreme)).toBe(true);
+  });
+
+  it('still returns exactly 1 for ideal framing and 0 for no face', () => {
+    expect(framingRaw(off(0), WEIGHTS_V1)).toBe(1);
+    expect(framingRaw({ ...GOOD, faceCount: 0 } as ValidatedPixelFeatures, WEIGHTS_V1)).toBe(0);
+  });
+
+  it('is monotone decreasing in the penalty across a wide sweep', () => {
+    const values = [0, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4].map((x) => framingRaw(off(x), WEIGHTS_V1));
+    expect(values).toEqual([...values].sort((a, b) => b - a));
+    expect(new Set(values).size).toBe(values.length);
+  });
+});
+
+describe('lightingRaw', () => {
+  const face = (exposure: number, clip = 0): ValidatedPixelFeatures =>
+    ({
+      ...GOOD,
+      faceExposureMean: exposure,
+      faceClippedHighlights: clip,
+      faceClippedShadows: 0,
+    }) as ValidatedPixelFeatures;
+
+  it('is two-sided: too dark and too bright both cost', () => {
+    const { idealExposureMin, idealExposureMax } = WEIGHTS_V1.lighting;
+    const middle = lightingRaw(face((idealExposureMin + idealExposureMax) / 2), WEIGHTS_V1);
+    expect(middle).toBe(1);
+    expect(lightingRaw(face(20), WEIGHTS_V1)).toBeLessThan(middle);
+    expect(lightingRaw(face(250), WEIGHTS_V1)).toBeLessThan(middle);
+  });
+
+  it('reads the face, not the frame - the backlit case', () => {
+    const backlit = { ...face(30), exposureMean: 200 } as ValidatedPixelFeatures;
+    const evenlyLit = { ...face(130), exposureMean: 200 } as ValidatedPixelFeatures;
+    expect(lightingRaw(backlit, WEIGHTS_V1)).toBeLessThan(lightingRaw(evenlyLit, WEIGHTS_V1));
+  });
+
+  it('charges for clipping on the face', () => {
+    expect(lightingRaw(face(130, 0.2), WEIGHTS_V1)).toBeLessThan(lightingRaw(face(130, 0), WEIGHTS_V1));
+  });
+
+  it('never saturates and stays inside (0, 1]', () => {
+    for (const exposure of [0, 1, 128, 254, 255]) {
+      const value = lightingRaw(face(exposure, 1), WEIGHTS_V1);
+      expect(value).toBeGreaterThan(0);
+      expect(value).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe('resolution from the shorter edge', () => {
+  const at = (w: number, h: number): ValidatedPixelFeatures =>
+    ({ ...GOOD, width: w, height: h }) as ValidatedPixelFeatures;
+
+  it('follows LinkedIn published spec points', () => {
+    expect(resolutionScore(at(400, 400), WEIGHTS_V1)).toBeCloseTo(3, 6);
+    expect(resolutionScore(at(800, 800), WEIGHTS_V1)).toBeCloseTo(5, 6);
+    expect(resolutionScore(at(200, 200), WEIGHTS_V1)).toBeCloseTo(1, 6);
+  });
+
+  it('awards 5 above the recommendation rather than capping lower', () => {
+    // The fitted map could never reach 5; this is why it was replaced.
+    expect(resolutionScore(at(4000, 3000), WEIGHTS_V1)).toBeCloseTo(5, 6);
+    expect(resolutionScore(at(8000, 6000), WEIGHTS_V1)).toBeCloseTo(5, 6);
+  });
+
+  it('is limited by the short side, not by megapixels', () => {
+    // 4000x400 is 1.6MP and useless for a square avatar crop.
+    expect(resolutionScore(at(4000, 400), WEIGHTS_V1)).toBeCloseTo(3, 6);
+    expect(resolutionScore(at(4000, 400), WEIGHTS_V1)).toBeLessThan(
+      resolutionScore(at(900, 900), WEIGHTS_V1),
+    );
   });
 });

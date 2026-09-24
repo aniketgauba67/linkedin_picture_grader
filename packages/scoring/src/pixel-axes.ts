@@ -18,6 +18,13 @@ export interface PixelFeatures {
   readonly jpegQualityEstimate: number;
   readonly exposureMean: number;
   readonly dynamicRange: number;
+  /** Face-box lighting. The whole-frame fields above are diagnostic now:
+   *  a backlit portrait looks correctly exposed on the frame and is a
+   *  silhouette on the face, and the axis has to score the face. */
+  readonly faceExposureMean: number;
+  readonly faceClippedHighlights: number;
+  readonly faceClippedShadows: number;
+  readonly faceRegionMeasured: boolean;
   readonly clippedHighlights: number;
   readonly clippedShadows: number;
   readonly faceAreaRatio: number;

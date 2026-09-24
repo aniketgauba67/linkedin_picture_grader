@@ -13,7 +13,6 @@ import type { Weights } from './weights/v1.js';
  * fit them the same way or it will silently lose the upper penalty.
  */
 
-const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
 
 /** The four judged axes, as the model scored them. */
 export interface JudgedScores {
@@ -62,7 +61,58 @@ export function framingRaw(features: PixelFeatures, weights: Weights): number {
   const offset = Math.hypot(features.faceCenterOffsetX, features.faceCenterOffsetY);
   const off = bandPenalty(offset, 0, offsetTolerance, offsetPenaltyScale);
 
-  return clamp01(1 - (ratio + off));
+  // `1 / (1 + penalty)`, NOT `clamp01(1 - penalty)`.
+  //
+  // The subtract-and-clamp form saturates: once the penalties sum past
+  // 1 every photograph reads exactly 0, and on the 125-image
+  // calibration set that was 53 of them - 42% of the data piled on one
+  // value, carrying human labels from 1 to 4. A monotone fit cannot
+  // separate points that share an x, so the framing map topped out at 2
+  // and no amount of relabelling would have moved it.
+  //
+  // The reciprocal is strictly decreasing over the whole unbounded
+  // penalty range, so "badly cropped" and "catastrophically cropped"
+  // stay distinguishable however bad they get, while the output stays
+  // in (0, 1] and the map keeps the domain it already had. The penalty
+  // terms themselves are never clamped; only the final axis score is.
+  return 1 / (1 + ratio + off);
+}
+
+/**
+ * Lighting as a single one-sided scalar: 1 is ideal, approaching 0 is
+ * worst. Same shape as framingRaw, and for the same reason.
+ *
+ * Runs on the FACE, not the frame. A backlit portrait has a healthy
+ * frame histogram - the window behind the subject fills it - while the
+ * face is a silhouette, so the whole-frame figures said the lighting was
+ * fine on exactly the photographs where it is worst. Fitted against
+ * human labels, the frame-based scalar produced a map with no monotone
+ * relationship to the labels at all: a single knot, one constant output
+ * for every input.
+ *
+ * Exposure is two-sided - too dark and too bright are both wrong - so it
+ * becomes a band penalty before the map sees it. Clipping is monotone in
+ * badness and adds directly.
+ *
+ * FIT THE LIGHTING MAP OVER THIS VALUE, never over dynamicRange.
+ */
+export function lightingRaw(features: PixelFeatures, weights: Weights): number {
+  const { idealExposureMin, idealExposureMax, exposurePenaltyScale, clippingFullPenaltyAt } =
+    weights.lighting;
+
+  const exposure = bandPenalty(
+    features.faceExposureMean,
+    idealExposureMin,
+    idealExposureMax,
+    exposurePenaltyScale,
+  );
+
+  // Clipping on the face is unrecoverable in a way flatness is not: a
+  // flat portrait can be graded, blown cheeks cannot be un-blown.
+  const clipped = features.faceClippedHighlights + features.faceClippedShadows;
+  const clipping = clippingFullPenaltyAt <= 0 ? 0 : clipped / clippingFullPenaltyAt;
+
+  return 1 / (1 + exposure + clipping);
 }
 
 /**
@@ -75,24 +125,7 @@ export function framingRaw(features: PixelFeatures, weights: Weights): number {
  * simply absent rather than wrong. Clipping is monotone in badness.
  */
 export function lightingScore(features: PixelFeatures, weights: Weights): number {
-  const base = applyIsotonic(features.dynamicRange, weights.maps.lighting);
-
-  const { idealExposureMin, idealExposureMax, exposurePenaltyScale, clippingFullPenaltyAt } =
-    weights.lighting;
-
-  const exposure = bandPenalty(
-    features.exposureMean,
-    idealExposureMin,
-    idealExposureMax,
-    exposurePenaltyScale,
-  );
-
-  // Clipping is penalised harder than flatness because it is
-  // unrecoverable: a flat photo can be graded, a clipped one cannot.
-  const clipped = features.clippedHighlights + features.clippedShadows;
-  const clipping = clippingFullPenaltyAt <= 0 ? 0 : clipped / clippingFullPenaltyAt;
-
-  return clampAxis(base - exposure - clipping);
+  return clampAxis(applyIsotonic(lightingRaw(features, weights), weights.maps.lighting));
 }
 
 export function sharpnessScore(features: PixelFeatures, weights: Weights): number {
@@ -110,9 +143,25 @@ export function sharpnessScore(features: PixelFeatures, weights: Weights): numbe
   return clampAxis(base - penalty);
 }
 
+/**
+ * The shorter edge in pixels, which is what a square avatar crop is
+ * limited by. A 4000x400 panorama has 1.6 megapixels and 400 usable
+ * pixels; megapixels flatter it and the shorter edge does not.
+ */
+export function shorterEdge(features: PixelFeatures): number {
+  return Math.min(features.width, features.height);
+}
+
+/**
+ * Resolution, from the shorter edge against LinkedIn's published spec.
+ *
+ * NOT FITTED, and deliberately so - see the knot table in weights/v1.ts.
+ * The requirement is a published number, not a matter of taste, and the
+ * one attempt to fit it produced a map that could never award 5 because
+ * no labelled photograph was large enough to earn one.
+ */
 export function resolutionScore(features: PixelFeatures, weights: Weights): number {
-  const megapixels = (features.width * features.height) / 1_000_000;
-  return applyIsotonic(megapixels, weights.maps.resolution);
+  return applyIsotonic(shorterEdge(features), weights.maps.resolution);
 }
 
 export function framingScore(features: PixelFeatures, weights: Weights): number {
