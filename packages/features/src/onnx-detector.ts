@@ -31,7 +31,7 @@ export function createOnnxDetector(options: OnnxDetectorOptions): Detector {
     inputNames: readonly string[];
     outputNames: readonly string[];
   }> {
-    session ??= import('onnxruntime-node').then((ort) =>
+    session ??= import(/* webpackIgnore: true */ 'onnxruntime-node').then((ort) =>
       ort.InferenceSession.create(options.modelPath, { graphOptimizationLevel: 'all' }),
     );
     return session;
@@ -40,7 +40,7 @@ export function createOnnxDetector(options: OnnxDetectorOptions): Detector {
   return {
     async detect(plane: RgbPlane): Promise<readonly FaceObservation[]> {
       const active = await getSession();
-      const ort = await import('onnxruntime-node');
+      const ort = await import(/* webpackIgnore: true */ 'onnxruntime-node');
 
       const tensorData = new Float32Array(inputSize * inputSize);
       const xScale = plane.width / inputSize;

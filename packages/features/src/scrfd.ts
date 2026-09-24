@@ -1,6 +1,6 @@
-import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import type { Detector, FaceObservation, Keypoints } from './face.js';
 import type { RgbPlane } from './luma.js';
 
@@ -22,8 +22,39 @@ export const SCRFD_INPUT = 640;
 const STRIDES = [8, 16, 32] as const;
 const ANCHORS_PER_CELL = 2;
 
+const MODEL_FILE = 'models/det_500m.onnx';
+
+/**
+ * Where the weights are, across the two layouts that matter.
+ *
+ * Locally the package resolves them relative to its own dist/. Inside a
+ * traced serverless bundle that relative walk lands nowhere, because the
+ * function root is the monorepo root rather than the package. Candidates
+ * are tried in order and the first that exists wins, so neither layout
+ * has to know about the other.
+ *
+ * Whichever wins, the file only exists in a deployed bundle because
+ * `outputFileTracingIncludes` names it - Next's tracer cannot see
+ * through a path computed at runtime.
+ */
+export function resolveModelPath(): string {
+  const candidates = [
+    fileURLToPath(new URL(`../../../${MODEL_FILE}`, import.meta.url)),
+    join(process.cwd(), MODEL_FILE),
+    join(process.cwd(), '..', '..', MODEL_FILE),
+  ];
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (found !== undefined) {
+    return found;
+  }
+  // Nothing exists yet. Return the package-relative path so the error
+  // from loadSession names somewhere a human recognises.
+  return candidates[0] ?? MODEL_FILE;
+}
+
+/** @deprecated Prefer `resolveModelPath()`, which handles the bundle layout. */
 export const DEFAULT_MODEL_PATH = fileURLToPath(
-  new URL('../../../models/det_500m.onnx', import.meta.url),
+  new URL(`../../../${MODEL_FILE}`, import.meta.url),
 );
 
 export interface ScrfdOptions {
@@ -52,7 +83,23 @@ interface OrtSession {
  */
 let sessionPromise: Promise<{ ort: OrtLike; session: OrtSession }> | null = null;
 
-const require = createRequire(import.meta.url);
+/**
+ * Loads onnxruntime-node at runtime, out of the bundler's reach.
+ *
+ * `webpackIgnore` is required, not decorative. onnxruntime-node's
+ * binding.js builds a require context over every platform's
+ * `onnxruntime_binding.node`, so a bundler that follows the import tries
+ * to parse a native addon as JavaScript and the build dies with
+ * "Module parse failed: Unexpected character". The package is listed in
+ * serverExternalPackages precisely so it is required from node_modules
+ * at runtime instead.
+ */
+async function loadOnnxRuntime(): Promise<OrtLike> {
+  const mod = await import(/* webpackIgnore: true */ 'onnxruntime-node');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- CommonJS interop: the namespace may or may not carry a default, and the shape actually used is narrowed by OrtLike.
+  const resolved = ((mod as any).default ?? mod) as OrtLike;
+  return resolved;
+}
 
 async function loadSession(modelPath: string) {
   if (!existsSync(modelPath)) {
@@ -61,8 +108,7 @@ async function loadSession(modelPath: string) {
         '`git lfs install && git lfs pull`, then `pnpm verify:models`.',
     );
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- onnxruntime-node ships CommonJS with no ESM types; the shape used is narrowed by OrtLike.
-  const ort = require('onnxruntime-node') as any as OrtLike;
+  const ort = await loadOnnxRuntime();
   const session = await ort.InferenceSession.create(modelPath, {
     graphOptimizationLevel: 'all',
   });
@@ -209,7 +255,7 @@ function toObservation(c: Candidate, scale: number): FaceObservation {
 }
 
 export function createScrfdDetector(options: ScrfdOptions = {}): Detector {
-  const modelPath = options.modelPath ?? DEFAULT_MODEL_PATH;
+  const modelPath = options.modelPath ?? resolveModelPath();
   const minConfidence = options.minConfidence ?? 0.5;
   const iouThreshold = options.iouThreshold ?? 0.4;
 

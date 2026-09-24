@@ -61,6 +61,7 @@ export {
   nonMaximumSuppression,
   preprocess,
   resetScrfdSession,
+  resolveModelPath,
 } from './scrfd.js';
 export type { ScrfdOptions } from './scrfd.js';
 
