@@ -161,6 +161,10 @@ const CLAIMS = [
   ['docs/calibration-notes.md', 'the constants table exists', 'CONSTANTS — which parts of this system are guesses'],
   ['docs/calibration-notes.md', 'and names the weakest numbers', 'Two numbers carry the most weight with the least evidence'],
   ['packages/eval/src/overlap.ts', 'a silent rescale is called out as the risk', 'A silent rescale becoming routine'],
+  ['packages/schema/src/outcome.ts', 'a decline carries the score it earned', 'A DECLINE IS A FINDING, NOT AN ABSENCE'],
+  ['packages/schema/src/outcome.ts', 'and says when the score is absent', 'ABSENT ONLY WHEN THERE ARE NO USABLE FEATURES'],
+  ['packages/schema/src/outcome.ts', 'the refinement explains why it sits on the union', 'discriminatedUnion` only accepts plain objects as members'],
+  ['apps/web/src/lib/outcome-view.ts', 'the UI shows the number rather than Not scored', 'A bare decline tells the person'],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**

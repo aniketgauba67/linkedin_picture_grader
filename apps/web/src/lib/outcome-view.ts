@@ -51,15 +51,22 @@ export function toView(outcome: AnalysisOutcome): OutcomeView {
       fixes: result.fixes,
       caveat: caveatFor(result),
     }),
-    declined: (reason, message) => ({
+    declined: (reason, message, score) => ({
       kind: 'declined',
-      headline: 'Not scored',
+      // "2.0 / 10" beats "Not scored". A bare decline tells the person
+      // nothing they can act on - it does not say whether this was a
+      // near miss or hopeless, and those call for different next steps.
+      // Only `corrupt_file` has no number, because nothing decoded.
+      headline: score === undefined ? 'Not scored' : `${score.score.toFixed(1)} / 10`,
       // The server's message wins when it has one; the table is the
       // fallback so a new reason never renders as an empty screen.
       detail: message.trim() === '' ? DECLINE_COPY[reason] : message,
-      rows: [],
-      fixes: [],
-      caveat: null,
+      // The axes that were genuinely measured still show. They are the
+      // evidence behind the number, and on a decline they are usually
+      // the part the person can do something about.
+      rows: score === undefined ? [] : axisRows(score),
+      fixes: score?.fixes ?? [],
+      caveat: score === undefined ? null : caveatFor(score),
     }),
   });
 }

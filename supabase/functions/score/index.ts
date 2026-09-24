@@ -75,8 +75,16 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-function declined(reason: DeclineReason, message: string): Response {
-  return json({ status: 'declined', reason, message });
+/**
+ * A decline carries the score the photograph earned anyway.
+ *
+ * `corrupt_file` is the one reason with no score, because the bytes
+ * never decoded and there is nothing to have measured. Every other
+ * reason ran extraction first, so there is a real capped number and
+ * withholding it leaves the user with nothing to act on.
+ */
+function declined(reason: DeclineReason, message: string, score?: unknown): Response {
+  return json(score === undefined ? { status: 'declined', reason, message } : { status: 'declined', reason, message, score });
 }
 
 /**
@@ -227,16 +235,36 @@ Deno.serve(async (request: Request): Promise<Response> => {
   }
 
   if (computed.faceCount === 0) {
-    return declined('no_face', 'No face was found in this image, so there is nothing to score.');
+    return declined(
+      'no_face',
+      'No face was found in this image, so there is nothing to score.',
+      score({
+        features: computed as ValidatedPixelFeatures,
+        context: rawContext,
+        confidence: computeConfidence(computed, { soloScore: 1 }),
+        declined: 'no_face',
+      }),
+    );
   }
   // The model looked and declined. Its reasons are a subset of
   // DeclineReason, so there is nothing to flatten.
   if (verdict.assessment.status === 'declined') {
+    const reason = verdict.assessment.reason;
     return declined(
-      verdict.assessment.reason,
+      reason,
       verdict.assessment.detail === ''
         ? 'This image cannot be assessed as a profile photo.'
         : verdict.assessment.detail,
+      // corrupt_file never reaches here - the features exist, which is
+      // how we got this far - so there is always a number to report.
+      reason === 'corrupt_file'
+        ? undefined
+        : score({
+            features: computed as ValidatedPixelFeatures,
+            context: rawContext,
+            confidence: computeConfidence(computed, { soloScore: 1 }),
+            declined: reason,
+          }),
     );
   }
 

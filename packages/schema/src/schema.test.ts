@@ -549,10 +549,24 @@ describe('AnalysisOutcome', () => {
     },
   };
 
+  /** The capped composite a declined photograph still earns. */
+  const cappedScore = {
+    ...scored.result,
+    score: 2,
+    coverage: 'partial',
+    axes: {
+      sharpness: 5,
+      lighting: 5,
+      resolution: 5,
+      framing: 1,
+    },
+  };
+
   const declined = {
     status: 'declined',
     reason: 'no_face',
     message: 'No face was found in this image.',
+    score: cappedScore,
   };
 
   it('accepts both branches', () => {
@@ -592,6 +606,52 @@ describe('AnalysisOutcome', () => {
 
     expect(describe_(AnalysisOutcome.parse(scored))).toBe('scored 7.4');
     expect(describe_(AnalysisOutcome.parse(declined))).toBe('declined no_face');
+  });
+
+  it('hands the capped score to the declined branch', () => {
+    const render = (outcome: AnalysisOutcome): string =>
+      matchOutcome(outcome, {
+        scored: (result) => `${result.score}`,
+        declined: (_reason, message, score) =>
+          score === undefined ? message : `${score.score} - ${message}`,
+      });
+
+    expect(render(AnalysisOutcome.parse(declined))).toBe(
+      '2 - No face was found in this image.',
+    );
+  });
+
+  it('keeps .result unreachable on a decline', () => {
+    const outcome = AnalysisOutcome.parse(declined);
+    // The union's job. `score` is a capped composite on the declined
+    // branch, not the `result` a scored outcome carries.
+    expect('result' in outcome).toBe(false);
+    if (isDeclined(outcome)) expect(outcome.score?.score).toBe(2);
+  });
+
+  it('requires a score on every decline that had features to measure', () => {
+    for (const reason of ['no_face', 'apparent_minor', 'not_a_photo', 'model_refusal']) {
+      const parsed = AnalysisOutcome.safeParse({ ...declined, reason, score: undefined });
+      expect(parsed.success, reason).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues[0]?.message).toMatch(/must carry its capped score/);
+      }
+    }
+  });
+
+  it('refuses a score on corrupt_file, where nothing was measured', () => {
+    const withScore = AnalysisOutcome.safeParse({ ...declined, reason: 'corrupt_file' });
+    expect(withScore.success).toBe(false);
+    if (!withScore.success) {
+      expect(withScore.error.issues[0]?.message).toMatch(/never decoded/);
+    }
+
+    const without = AnalysisOutcome.safeParse({
+      ...declined,
+      reason: 'corrupt_file',
+      score: undefined,
+    });
+    expect(without.success).toBe(true);
   });
 });
 
