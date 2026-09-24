@@ -134,6 +134,18 @@ const CLAIMS = [
   ['packages/scoring/src/weights/v1.ts', 'the lighting map domain changed with the scalar', 'THE DOMAIN CHANGED'],
   ['packages/schema/src/features.ts', 'face exposure explains the backlit failure', 'a backlit portrait scores well on it while the face itself is unreadable'],
   ['training/calibrate.ts', 'the distribution check is standing, not ad hoc', 'Printed for EVERY axis on EVERY run'],
+
+  // --- the three decisions ---
+  ['packages/scoring/src/weights/v1.ts', 'lighting is a sanity check, not a quality model', 'clipping-and-exposure sanity check, not a lighting quality model'],
+  ['packages/scoring/src/weights/v1.ts', 'and says not to try fitting it again', 'Do not fit this. Do not widen it to chase a correlation'],
+  ['packages/scoring/src/weights/v1.ts', 'the framing map states its validity ceiling', 'VALID TO SCORE 2. ANYTHING ABOVE IS EXTRAPOLATION'],
+  ['packages/scoring/src/weights.ts', 'the lighting demotion records its reason', 'an axis nobody can validate should not vote like one that has been'],
+  ['docs/calibration-notes.md', 'the negative result is recorded', 'REJECTED — mean facial exposure as a lighting quality model'],
+  ['docs/calibration-notes.md', 'with the number that rules it out', 'best two-sided band, centre searched 60→180'],
+  ['docs/calibration-notes.md', 'and the correction to the earlier held-out figure', 'An earlier run reported 0.681'],
+  ['docs/calibration-notes.md', 'directional features are named as the missing piece', 'key/fill ratio across the face'],
+  ['packages/schema/src/features.ts', 'exposureDelta is cached against the revisit', 'The backlight signature'],
+  ['training/reextract.ts', 'says why the collector cannot do this job', 'it is resumable by design'],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**

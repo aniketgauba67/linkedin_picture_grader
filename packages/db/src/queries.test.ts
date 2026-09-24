@@ -24,6 +24,7 @@ const features: ComputedFeatures = {
   faceClippedHighlights: 0.002,
   faceClippedShadows: 0.003,
   faceRegionMeasured: true,
+  exposureDelta: 4,
   width: 1500,
   height: 1500,
   faceAreaRatio: 0.12,
@@ -41,7 +42,7 @@ const features: ComputedFeatures = {
   isGrayscale: false,
   aspectExtreme: false,
   sourceFormat: 'jpeg',
-  extractorVersion: 'v5',
+  extractorVersion: 'v7',
 };
 
 const assessed: RubricResponse = {

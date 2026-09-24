@@ -79,8 +79,8 @@ export interface Weights {
 }
 
 export const WEIGHTS_V1: Weights = {
-  version: '2026-09-24.1',
-  compatibleExtractorVersion: 'v5',
+  version: '2026-09-24.2',
+  compatibleExtractorVersion: 'v7',
 
   maps: {
     /**
@@ -118,16 +118,35 @@ export const WEIGHTS_V1: Weights = {
       [700, 5],
     ],
     /**
+     * HAND-SET RULE, NOT A FIT. This is a clipping-and-exposure sanity
+     * check, not a lighting quality model, and it should not be
+     * described as one anywhere.
+     *
+     * Mean facial exposure was tested properly against the 125-image
+     * labelled set and rejected. The numbers are in
+     * docs/calibration-notes.md; the short version is that the best
+     * held-out Spearman achievable by ANY two-sided mean-exposure
+     * scalar is 0.335, found by searching every centre from 60 to 180,
+     * and the band below is already at the optimum centre of 130. The
+     * measurement is not mis-tuned. It is insufficient.
+     *
+     * What it does catch, and what it is kept for: a face that is
+     * genuinely crushed to black or blown to white. That is a real
+     * defect and a real floor, and it is worth the weight it now
+     * carries - which is roughly half what it used to, precisely
+     * because an axis nobody can validate should not vote like one that
+     * has been.
+     *
+     * Do not fit this. Do not widen it to chase a correlation. Lighting
+     * quality needs directional features - key/fill ratio, shadow
+     * gradient across the face, highlight rolloff - and may belong with
+     * the VLM-judged axes rather than the computed ones.
+     *
      * Over `lightingRaw` (1 = ideal, approaching 0 = worst), NOT over
-     * dynamicRange.
-     *
-     * THE DOMAIN CHANGED. These used to be luma-span values out of 255;
-     * lightingRaw is a ratio in (0, 1]. A knot table left in the old
-     * units does not fail, it clamps every photograph to the first knot
-     * and hands out a flat score of 1 - which is exactly what the test
-     * suite caught when the domain moved and this table had not.
-     *
-     * Provisional until the refit lands.
+     * dynamicRange. THE DOMAIN CHANGED when lightingRaw replaced it:
+     * these used to be luma-span values out of 255. A knot table left
+     * in the old units does not fail, it clamps every photograph to the
+     * first knot and hands out a flat score of 1.
      */
     lighting: [
       [0, 1],
@@ -161,13 +180,40 @@ export const WEIGHTS_V1: Weights = {
       [400, 3],
       [800, 5],
     ],
-    // Over framingRaw (1 = ideal, 0 = worst). Monotone in goodness.
+    /**
+     * FITTED. The only fitted map in this file.
+     *
+     * Over `framingRaw` (1 = ideal, approaching 0 = worst), monotone in
+     * goodness. Pool-adjacent-violators over 125 hand-labelled
+     * photographs; held-out Spearman 0.595, in-sample 0.698, cluster-
+     * held-out by credited photographer.
+     *
+     * VALID TO SCORE 2. ANYTHING ABOVE IS EXTRAPOLATION.
+     *
+     * The fit stops at 2 because the labels do: no photograph in the
+     * set scored 5 on framing and only 12 scored 4, so there is nothing
+     * anchoring the top of the scale. applyIsotonic clamps above the
+     * last knot, so every well-framed photograph currently receives 2.
+     *
+     * This was written past the calibrator's stop rule deliberately,
+     * with `--override-stop`, and the recorded reason was:
+     *
+     *   "Framing held-out Spearman 0.595 (in-sample 0.698) on a
+     *   monotone unsaturating scalar. The map tops out at 2 only
+     *   because no image was labelled 5 and just 12 were labelled 4 - a
+     *   label-coverage ceiling the Pexels corpus genuinely fixes,
+     *   unlike lighting's measurement ceiling. A real fit over the
+     *   range the data supports beats a hand-set guess across the whole
+     *   range. VALID TO SCORE 2; anything above is extrapolation.
+     *   Refit when labelled well-framed examples exist."
+     *
+     * TODO: refit once the Pexels corpus supplies labelled well-framed
+     * examples. That corpus is full of them and none are labelled yet,
+     * which makes this the cheapest open item in the calibration.
+     */
     framing: [
-      [0, 1],
-      [0.35, 2],
-      [0.6, 3],
-      [0.8, 4],
-      [0.95, 5],
+      [0.37495916728272416, 1],
+      [0.48170673451176993, 2],
     ],
   },
 

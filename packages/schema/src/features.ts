@@ -5,7 +5,7 @@ import { z } from 'zod';
  * column next to the cached vector, not as a field of the vector, so an
  * older row is detected and re-extracted rather than silently mis-scored.
  */
-export const FEATURE_VECTOR_VERSION = 6;
+export const FEATURE_VECTOR_VERSION = 7;
 
 /**
  * The cache key for an extraction, derived from the version rather than
@@ -94,6 +94,22 @@ export const ComputedFeatures = z.object({
    * one built on a measurement.
    */
   faceRegionMeasured: z.boolean(),
+  /**
+   * `exposureMean - faceExposureMean`. The backlight signature.
+   *
+   * TIER 2: cached, never read at scoring time. A large positive value
+   * is a bright frame around a dark face, which is exactly backlighting,
+   * and it is the one directional signal available without new
+   * measurement. Stored now rather than derived later so that revisiting
+   * the lighting axis does not cost another re-extraction pass over
+   * every image.
+   *
+   * Signed on purpose: negative means the face is brighter than its
+   * surroundings, which is a different photograph - a flash portrait or
+   * a spotlit subject - and collapsing the two with an absolute value
+   * would throw away the distinction.
+   */
+  exposureDelta: z.number().finite().min(-255).max(255),
 
   // --- resolution ----------------------------------------------------
   /** Pixel dimensions of the original image, EXIF rotation applied. */
@@ -233,6 +249,7 @@ export const FEATURE_RULES: Readonly<Record<NumericFeatureField, FieldRule>> = {
   faceExposureMean: { min: 0, max: 255 },
   faceClippedHighlights: { min: 0, max: 1 },
   faceClippedShadows: { min: 0, max: 1 },
+  exposureDelta: { min: -255, max: 255 },
   width: { min: 1, max: Number.MAX_SAFE_INTEGER, int: true },
   height: { min: 1, max: Number.MAX_SAFE_INTEGER, int: true },
   faceAreaRatio: { min: 0, max: 1 },
@@ -260,6 +277,7 @@ export type NumericFeatureField =
   | 'faceExposureMean'
   | 'faceClippedHighlights'
   | 'faceClippedShadows'
+  | 'exposureDelta'
   | 'width'
   | 'height'
   | 'faceAreaRatio'

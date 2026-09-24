@@ -44,6 +44,7 @@ const features: ComputedFeatures = {
   faceClippedHighlights: 0.002,
   faceClippedShadows: 0.003,
   faceRegionMeasured: true,
+  exposureDelta: 4,
   width: 1500,
   height: 1500,
   faceAreaRatio: 0.12,
@@ -61,7 +62,7 @@ const features: ComputedFeatures = {
   isGrayscale: false,
   aspectExtreme: false,
   sourceFormat: 'jpeg',
-  extractorVersion: 'v5',
+  extractorVersion: 'v7',
 };
 
 const assessed = { background: 4, attire: 3, expression: 4, solo: 5 };
@@ -121,6 +122,7 @@ describe('scoring mirror', () => {
       faceClippedHighlights: 0.002,
       faceClippedShadows: 0.003,
       faceRegionMeasured: true,
+      exposureDelta: 4,
       width: 200,
       height: 200,
       faceAreaRatio: 0.01,

@@ -83,6 +83,10 @@ export const FEATURE_ROLES: Readonly<
   extractorVersion: { role: 'axis', note: 'score() refuses weights fitted against another extractor' },
 
   // --- training input only -------------------------------------------
+  exposureDelta: {
+    role: 'tier2',
+    note: 'frame exposure minus face exposure - the backlight signature. Cached for the lighting revisit and deliberately not read at scoring time: mean facial exposure was tested against 125 labels and reached 0.335 held-out at best, so nothing built on it is ready to score with yet.',
+  },
   roll: {
     role: 'tier2',
     note: 'head tilt from the eye line. Distillation input; no axis reads it, and a tilted head is not itself a defect.',

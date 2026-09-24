@@ -9,6 +9,7 @@
     "collect": "node dist/collect-corpus.js",
     "validate:extract": "node dist/extract-validation.js",
     "calibrate": "node dist/calibrate.js",
+    "reextract": "node dist/reextract.js",
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.test.json --noEmit",

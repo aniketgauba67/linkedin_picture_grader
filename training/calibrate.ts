@@ -118,7 +118,9 @@ export const AXES: readonly AxisSpec[] = [
     unit: 'lightingRaw (1 = ideal)',
     measure: (f) => lightingRaw(f as ValidatedPixelFeatures, WEIGHTS_V1),
     scaleInvariant: true,
-    fitted: true,
+    fitted: false,
+    notFittedBecause:
+      'REJECTED, not deferred. Mean facial exposure was tested against all 125 labels: frame exposure correlates -0.070, face exposure +0.188, and the best two-sided band over every centre from 60 to 180 reaches 0.335 held-out - at centre 130, which is where the shipped band already sits. The band ships as a clipping-and-exposure sanity check, not a lighting quality model. Lighting quality needs directional features. See docs/calibration-notes.md.',
   },
   {
     name: 'resolution',
@@ -536,6 +538,33 @@ export function toAxisMaps(calibration: Calibration): Record<string, readonly Kn
   return maps;
 }
 
+/**
+ * Parses `--override-stop "<reason>"`.
+ *
+ * The stop rule is not weakened by this: every STOP still fires, still
+ * prints, and still says what it would cost. The flag only provides a
+ * documented way past one, and it demands a reason long enough to be an
+ * argument rather than a shrug - which then gets written next to the
+ * knots it excused, where the next person reads it before trusting them.
+ */
+export const MIN_OVERRIDE_REASON = 30;
+
+export function parseOverride(argv: readonly string[]): string | null {
+  const at = argv.indexOf('--override-stop');
+  if (at < 0) return null;
+  const reason = (argv[at + 1] ?? '').trim();
+  if (reason === '' || reason.startsWith('--')) {
+    throw new Error('--override-stop needs a reason string');
+  }
+  if (reason.length < MIN_OVERRIDE_REASON) {
+    throw new Error(
+      `--override-stop reason must be at least ${MIN_OVERRIDE_REASON} characters; ` +
+        'it is recorded in the weights file and read by whoever inherits these knots',
+    );
+  }
+  return reason;
+}
+
 function main(): number {
   const lookupRaw: unknown = JSON.parse(readFileSync(VALIDATION_FEATURES, 'utf8'));
   const lookup = lookupRaw as Record<string, { features: PixelFeatures }>;
@@ -564,23 +593,55 @@ function main(): number {
   const blockers = calibration.axes.filter(
     (a) => a.spec.fitted && a.warnings.some((w) => w.startsWith('STOP:')),
   );
-  if (blockers.length > 0) {
+
+  let override: string | null;
+  try {
+    override = parseOverride(process.argv.slice(2));
+  } catch (error) {
+    process.stderr.write(`\n${error instanceof Error ? error.message : 'bad override'}\n`);
+    return 2;
+  }
+
+  if (blockers.length > 0 && override === null) {
     process.stderr.write(
-      `\nNOT writing ${WEIGHTS_PATH}: ${blockers.map((b) => b.spec.name).join(', ')} would cap real inputs.\n`,
+      `\nNOT writing: ${blockers.map((b) => b.spec.name).join(', ')} would cap real inputs.\n` +
+        'If that is a considered decision rather than an oversight, re-run with\n' +
+        '  --override-stop "<why this is acceptable>"\n' +
+        `and the reason is recorded alongside the knots in ${WEIGHTS_PATH}.\n`,
     );
     return 2;
   }
 
-  if (process.argv.includes('--write')) {
-    const maps = toAxisMaps(calibration);
-    writeFileSync(
-      'data/validation/fitted-maps.json',
-      `${JSON.stringify(maps, null, 1)}\n`,
-      'utf8',
-    );
-    process.stdout.write('\nwrote data/validation/fitted-maps.json\n');
-  } else {
+  if (!process.argv.includes('--write')) {
     process.stdout.write('\n(dry run - pass --write to emit the fitted maps)\n');
+    return 0;
+  }
+
+  const fitted = calibration.axes.filter((a) => a.spec.fitted);
+  const maps: Record<string, unknown> = {};
+  for (const report of fitted) {
+    maps[report.spec.name] = {
+      knots: report.fit.knots,
+      unit: report.spec.unit,
+      n: report.n,
+      spearmanHeldOut: report.spearmanCrossValidated,
+      topScore: report.fit.topScore,
+      // Every STOP that was overridden travels with the knots. A knot
+      // table without its caveats is how a map valid to 2 gets treated
+      // as valid to 5.
+      overriddenStops: report.warnings.filter((w) => w.startsWith('STOP:')),
+      override,
+    };
+  }
+
+  writeFileSync('data/validation/fitted-maps.json', `${JSON.stringify(maps, null, 1)}\n`, 'utf8');
+  process.stdout.write('\nwrote data/validation/fitted-maps.json\n');
+
+  if (override !== null && blockers.length > 0) {
+    process.stdout.write(
+      `\nOVERRIDDEN for ${blockers.map((b) => b.spec.name).join(', ')}:\n  "${override}"\n` +
+        `Record that reason in ${WEIGHTS_PATH} beside the knots it excused.\n`,
+    );
   }
   return 0;
 }

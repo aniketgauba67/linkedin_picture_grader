@@ -22,7 +22,7 @@ const FEATURES: PixelFeatures = {
   faceCenterOffsetX: 0.02,
   faceCenterOffsetY: 0.02,
   faceCount: 1,
-  extractorVersion: 'v5',
+  extractorVersion: 'v7',
 };
 
 const axesAt = (value: number) => Object.fromEntries(AXES.map((a) => [a, value]));

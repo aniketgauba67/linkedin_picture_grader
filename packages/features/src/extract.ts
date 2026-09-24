@@ -192,6 +192,7 @@ export async function extractFeatures(image: Buffer): Promise<ComputedFeatures> 
   const faces = await detectFaces(rgb);
   assertFacesUsable(faces);
   const face = primaryFace(faces, plane.width, plane.height);
+  const faceExposure = faceLighting(plane, face);
   const points = face?.keypoints ?? null;
 
   const sharpnessEyeRegion = measureEyeRegion(plane, face);
@@ -208,7 +209,10 @@ export async function extractFeatures(image: Buffer): Promise<ComputedFeatures> 
     clippedHighlights: clamp(lighting.clippedHighlightRatio, 0, 1),
     clippedShadows: clamp(lighting.clippedShadowRatio, 0, 1),
     dynamicRange: clamp(lighting.dynamicRange, 0, 255),
-    ...faceLighting(plane, face),
+    ...faceExposure,
+    // Signed, and clamped to the representable range rather than to
+    // zero: the sign is the whole signal.
+    exposureDelta: clamp(lighting.meanLuma - faceExposure.faceExposureMean, -255, 255),
 
     width,
     height,

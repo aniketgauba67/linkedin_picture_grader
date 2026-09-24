@@ -42,6 +42,7 @@ const usable: ComputedFeatures = {
   faceClippedHighlights: 0.002,
   faceClippedShadows: 0.003,
   faceRegionMeasured: true,
+  exposureDelta: 4,
   width: 1600,
   height: 1600,
   faceAreaRatio: 0.16,

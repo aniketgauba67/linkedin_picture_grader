@@ -18,6 +18,7 @@
     "eval": "pnpm --silent --filter @pps/eval build && node packages/eval/dist/cli.js",
     "corpus": "pnpm --silent --filter @pps/training build && node --env-file-if-exists=.env.local training/dist/collect-corpus.js",
     "calibrate": "pnpm --silent --filter @pps/training build && node training/dist/calibrate.js",
+    "reextract": "pnpm --silent --filter @pps/training build && node training/dist/reextract.js",
     "clean": "turbo run clean && rm -rf node_modules",
     "postinstall": "node scripts/check-lfs.mjs && node scripts/verify-models.mjs",
     "verify:models": "node scripts/verify-models.mjs",

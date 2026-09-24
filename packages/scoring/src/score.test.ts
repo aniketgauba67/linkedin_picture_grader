@@ -3,8 +3,8 @@ import type { ValidatedPixelFeatures } from './pixel-axes.js';
 import type { JudgedScores } from './compute.js';
 import { bandPenalty, framingRaw, lightingRaw, resolutionScore } from './compute.js';
 import { WEIGHTS_V1 } from './weights/v1.js';
-import { WeightsVersionError, composeScore, score } from './score.js';
-import { CONTEXTS } from './weights.js';
+import { WeightsVersionError, composeScore, meanToComposite, score } from './score.js';
+import { CONTEXTS, DEFAULT_CONTEXT, weightsFor } from './weights.js';
 import { AXES, COMPUTED_AXES } from './axes.js';
 
 /** A photograph with nothing wrong with it. */
@@ -27,7 +27,7 @@ const GOOD = {
   faceCenterOffsetX: 0.01,
   faceCenterOffsetY: -0.02,
   faceCount: 1,
-  extractorVersion: 'v5',
+  extractorVersion: 'v7',
 } as ValidatedPixelFeatures;
 
 /** Soft, dark, tiny, and the subject is a speck in the corner. */
@@ -113,8 +113,44 @@ describe('the degraded path', () => {
   it('renormalises, so half the axes do not halve the score', () => {
     // Weights sum to 1 across eight axes. Without renormalising, four
     // good axes would report roughly half of what they earned.
+    //
+    // Asserted as a RELATIONSHIP, not against a magic number: the
+    // fitted framing map caps at 2, so the absolute value moves
+    // whenever a map is refitted and a hardcoded threshold would keep
+    // failing for reasons that have nothing to do with renormalising.
     const partial = score({ features: GOOD });
-    expect(partial.score).toBeGreaterThanOrEqual(8);
+    const weights = weightsFor(DEFAULT_CONTEXT);
+
+    let weighted = 0;
+    let used = 0;
+    for (const axis of COMPUTED_AXES) {
+      const value = partial.axes[axis];
+      if (value === undefined) throw new Error(`${axis} missing from the degraded path`);
+      weighted += value * weights[axis];
+      used += weights[axis];
+    }
+    // Renormalised: divided by the weight actually used, not by 1.
+    // meanToComposite, not a hand-rolled *2 - the 1-5 axis scale maps
+    // onto 1-10 by 1 + (mean - 1) * 2.25, and writing that out again
+    // here would be a second copy to get wrong.
+    const expected = meanToComposite(weighted / used);
+    expect(partial.score).toBeCloseTo(expected, 1);
+
+    // And the point of renormalising: without it, four present axes
+    // would be divided by the full eight-axis weight and report less.
+    expect(expected).toBeGreaterThan(meanToComposite(weighted));
+  });
+
+  it('caps a perfectly framed photograph at framing 2, which is the fitted ceiling', () => {
+    // Not a bug. The framing map was fitted on labels that never
+    // reached 4 or 5, so it is valid to 2 and extrapolates above -
+    // recorded in weights/v1.ts and docs/calibration-notes.md. This
+    // test exists so that the day it is refitted, the change in
+    // product behaviour is visible rather than silent.
+    const ideal = { ...GOOD, faceAreaRatio: 0.3, faceCenterOffsetX: 0, faceCenterOffsetY: 0 };
+    expect(framingRaw(ideal as ValidatedPixelFeatures, WEIGHTS_V1)).toBe(1);
+    const partial = score({ features: ideal as ValidatedPixelFeatures });
+    expect(partial.axes['framing']).toBe(2);
   });
 
   it('keeps confidence a number and puts the label in coverage', () => {

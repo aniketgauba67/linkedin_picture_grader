@@ -29,13 +29,14 @@ function features(overrides: Record<string, unknown> = {}): Record<string, unkno
     faceClippedHighlights: 0.002,
     faceClippedShadows: 0.003,
     faceRegionMeasured: true,
+    exposureDelta: 4,
     width: 2000,
     height: 3000,
     faceAreaRatio: 0.3,
     faceCenterOffsetX: 0,
     faceCenterOffsetY: 0,
     faceCount: 1,
-    extractorVersion: 'v5',
+    extractorVersion: 'v7',
     ...overrides,
   };
 }

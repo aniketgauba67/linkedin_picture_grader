@@ -35,6 +35,7 @@ function features(width = 1880, height = 2820): Record<string, unknown> {
     faceClippedHighlights: 0.002,
     faceClippedShadows: 0.003,
     faceRegionMeasured: true,
+    exposureDelta: 4,
     width,
     height,
     faceAreaRatio: 0.18,
@@ -51,7 +52,7 @@ function features(width = 1880, height = 2820): Record<string, unknown> {
     isGrayscale: false,
     aspectExtreme: false,
     sourceFormat: 'jpeg',
-    extractorVersion: 'v5',
+    extractorVersion: 'v7',
   };
 }
 
