@@ -18,6 +18,7 @@ export {
   normalizeImage,
   normalizedPipeline,
   prepareImage,
+  readExifOrientation,
 } from './normalize.js';
 export type { PreparedImage, SourceInfo } from './normalize.js';
 export { laplacianVariance } from './sharpness.js';

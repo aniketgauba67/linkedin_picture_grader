@@ -23,6 +23,60 @@ const GRAYSCALE_CHROMA_TOLERANCE = 2;
 /** Downsample used for the colour test only. Cheap, and plenty for it. */
 const CHROMA_PROBE_EDGE = 64;
 
+/** EXIF orientations 5-8 are quarter turns, which swap width and height. */
+const QUARTER_TURN_ORIENTATIONS = new Set([5, 6, 7, 8]);
+
+/**
+ * Reads the EXIF orientation tag, returning 1 when there is not one.
+ *
+ * This exists because heic-convert throws EXIF away. A real iPhone HEIC
+ * carries its orientation there - an iPhone 13 photo tested against
+ * Apple's own decoder came out vertically mirrored once the tag was
+ * lost - and `.rotate()` has nothing to act on unless the tag is carried
+ * across the conversion by hand.
+ */
+export async function readExifOrientation(buf: Buffer): Promise<number> {
+  let exif: Buffer | undefined;
+  try {
+    exif = (await sharp(buf, { limitInputPixels: MAX_INPUT_PIXELS }).metadata()).exif;
+  } catch {
+    return 1;
+  }
+  if (exif === undefined || exif.length < 12) {
+    return 1;
+  }
+
+  // The blob may start with the "Exif\0\0" header, or straight at the
+  // TIFF header. Find whichever byte order marker is present.
+  let base = exif.indexOf(Buffer.from('II\x2a\x00', 'latin1'));
+  if (base < 0) {
+    base = exif.indexOf(Buffer.from('MM\x00\x2a', 'latin1'));
+  }
+  if (base < 0) {
+    return 1;
+  }
+
+  const little = exif.toString('latin1', base, base + 2) === 'II';
+  const u16 = (at: number): number => (little ? exif.readUInt16LE(at) : exif.readUInt16BE(at));
+  const u32 = (at: number): number => (little ? exif.readUInt32LE(at) : exif.readUInt32BE(at));
+
+  try {
+    const ifd0 = base + u32(base + 4);
+    const entries = u16(ifd0);
+    for (let i = 0; i < entries; i += 1) {
+      const entry = ifd0 + 2 + i * 12;
+      if (u16(entry) === 0x0112) {
+        const value = u16(entry + 8);
+        return value >= 1 && value <= 8 ? value : 1;
+      }
+    }
+  } catch {
+    // A malformed EXIF block is not a reason to reject the image.
+    return 1;
+  }
+  return 1;
+}
+
 export interface SourceInfo {
   /** Container the bytes arrived in, before any conversion. */
   readonly sourceFormat: string;
@@ -65,11 +119,33 @@ export function isHeif(buf: Buffer): boolean {
  * and this runs only when that fails.
  */
 async function heifToJpeg(buf: Buffer): Promise<Buffer> {
+  const orientation = await readExifOrientation(buf);
+
+  let converted: Buffer;
   try {
     const output = await heicConvert({ buffer: buf, format: 'JPEG', quality: 0.92 });
-    return Buffer.from(output);
+    converted = Buffer.from(output);
   } catch (error) {
     throw asDecodeError(error, 'Could not decode HEIC image');
+  }
+
+  if (orientation === 1) {
+    return converted;
+  }
+
+  // heic-convert drops EXIF and does not bake the orientation into the
+  // pixels, so the tag is re-attached here and sharp's own `.rotate()`
+  // applies it downstream. Delegating to sharp rather than composing
+  // flip/flop/rotate by hand is deliberate: all eight orientations are
+  // easy to get subtly wrong, and only one of them is testable against
+  // the single reference photo available.
+  try {
+    return await sharp(converted, { limitInputPixels: MAX_INPUT_PIXELS })
+      .withMetadata({ orientation })
+      .jpeg({ quality: 95 })
+      .toBuffer();
+  } catch (error) {
+    throw asDecodeError(error, 'Could not re-tag converted HEIC orientation');
   }
 }
 
@@ -153,7 +229,7 @@ export async function prepareImage(buf: Buffer): Promise<PreparedImage> {
   // EXIF orientations 5-8 rotate by a quarter turn, which swaps the
   // reported dimensions. `.rotate()` applies that downstream, so the
   // dimensions have to be swapped here to match what gets measured.
-  const quarterTurned = (metadata.orientation ?? 1) >= 5;
+  const quarterTurned = QUARTER_TURN_ORIENTATIONS.has(metadata.orientation ?? 1);
   const width = (quarterTurned ? metadata.height : metadata.width) ?? 0;
   const height = (quarterTurned ? metadata.width : metadata.height) ?? 0;
   if (width <= 0 || height <= 0) {

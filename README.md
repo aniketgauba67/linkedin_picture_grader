@@ -89,6 +89,29 @@ daily, shortly after the pg_cron sweep.
 `deletePhoto` (the user-facing button) does the same two steps in one
 call, object first.
 
+## HEIC needs a real file to test
+
+`packages/features` handles iPhone HEIC through `heic-convert`, because
+sharp's bundled libheif has no HEVC codec - it parses the header happily
+and then fails on the actual decode. AVIF is AV1-coded and does work
+through sharp, so the two must not be conflated.
+
+heic-convert also strips EXIF without baking the orientation into the
+pixels, so the orientation tag is read from the original and re-applied
+by hand. Verified against Apple's own decoder: without it, an iPhone 13
+photo came out vertically mirrored.
+
+None of that can be tested hermetically - sharp cannot encode HEVC, so a
+fixture cannot be generated, and the repo never commits images. Point
+`PPS_TEST_HEIC` at a real iPhone photo to run those assertions:
+
+```bash
+PPS_TEST_HEIC=~/Desktop/IMG_0918.HEIC pnpm --filter @pps/features test
+```
+
+They skip otherwise. Budget on a 12MP HEIC: ~1.2s and ~750MB peak RSS,
+against a 300ms budget for already-decoded input.
+
 ## Dedup shares numbers, never rows
 
 `photos.sha256` is unique **per uploader**, not globally. Two people who

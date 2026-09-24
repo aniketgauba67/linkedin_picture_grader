@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import { beforeAll, describe, expect, it } from 'vitest';
 import sharp from 'sharp';
+import { assertFeaturesUsable } from '@pps/schema';
+import { extractFeatures } from './extract.js';
 import { ImageDecodeError } from './errors.js';
 import {
   EXTREME_ASPECT_RATIO,
@@ -7,6 +10,7 @@ import {
   detectSourceFormat,
   isHeif,
   normalizeImage,
+  readExifOrientation,
 } from './normalize.js';
 
 async function solid(width: number, height: number, rgb: [number, number, number]) {
@@ -182,4 +186,121 @@ describe('detectSourceFormat', () => {
   it('does not claim a format it could not identify', async () => {
     expect(await detectSourceFormat(Buffer.from('definitely not an image'))).toBe('unknown');
   });
+});
+
+describe('EXIF orientation', () => {
+  /** Top half black, bottom half white: asymmetric about the X axis. */
+  async function halves(orientation?: number): Promise<Buffer> {
+    const W = 64;
+    const H = 64;
+    const raw = Buffer.alloc(W * H * 3, 0);
+    raw.fill(255, (H / 2) * W * 3);
+    let pipeline = sharp(raw, { raw: { width: W, height: H, channels: 3 } });
+    if (orientation !== undefined) {
+      pipeline = pipeline.withMetadata({ orientation });
+    }
+    return pipeline.jpeg({ quality: 100 }).toBuffer();
+  }
+
+  /** Mean luma of the top half, to tell which way up an image is. */
+  async function topHalfLuma(buf: Buffer): Promise<number> {
+    const { data, info } = await sharp(buf)
+      .greyscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let sum = 0;
+    const half = Math.floor(info.height / 2);
+    for (let i = 0; i < half * info.width; i += 1) {
+      sum += data[i] ?? 0;
+    }
+    return sum / (half * info.width);
+  }
+
+  it('reads the tag when one is present', async () => {
+    for (const orientation of [1, 3, 4, 6, 8]) {
+      expect(await readExifOrientation(await halves(orientation))).toBe(orientation);
+    }
+  });
+
+  it('reports 1 when there is no tag, rather than guessing', async () => {
+    expect(await readExifOrientation(await halves())).toBe(1);
+    expect(await readExifOrientation(await solid(8, 8, [1, 2, 3]))).toBe(1);
+  });
+
+  it('reports 1 for bytes it cannot parse instead of throwing', async () => {
+    expect(await readExifOrientation(Buffer.from('not an image'))).toBe(1);
+    expect(await readExifOrientation(Buffer.alloc(4))).toBe(1);
+  });
+
+  it('applies the tag, so a mirrored photo is corrected before measurement', async () => {
+    // Orientation 4 is a vertical mirror. Uncorrected, every framing
+    // measurement would be upside down relative to what the user sees.
+    const upright = await normalizeImage(await halves());
+    const mirrored = await normalizeImage(await halves(4));
+    expect(await topHalfLuma(upright)).toBeLessThan(64);
+    expect(await topHalfLuma(mirrored)).toBeGreaterThan(190);
+  });
+
+  it('swaps the reported dimensions for a quarter turn', async () => {
+    const wide = await sharp({
+      create: { width: 80, height: 40, channels: 3, background: { r: 9, g: 9, b: 9 } },
+    })
+      .withMetadata({ orientation: 6 })
+      .jpeg()
+      .toBuffer();
+    const source = await describeSource(wide);
+    expect(source.width).toBe(40);
+    expect(source.height).toBe(80);
+  });
+});
+
+/**
+ * The HEIC path cannot be exercised hermetically: sharp's libheif has no
+ * HEVC encoder, so a real iPhone file cannot be generated at test time,
+ * and the repo never commits images. Point PPS_TEST_HEIC at one to run
+ * these; they skip otherwise.
+ */
+const heicPath = process.env['PPS_TEST_HEIC'] ?? '';
+const heicSuite = heicPath !== '' && existsSync(heicPath) ? describe : describe.skip;
+
+heicSuite('a real iPhone HEIC', () => {
+  let heic: Buffer;
+
+  beforeAll(() => {
+    heic = readFileSync(heicPath);
+  });
+
+  it('is recognised without decoding it', async () => {
+    expect(isHeif(heic)).toBe(true);
+    expect(await detectSourceFormat(heic)).toBe('heic');
+  });
+
+  it('is something sharp alone cannot decode', async () => {
+    // The reason heic-convert is a dependency. sharp parses the header
+    // happily and only fails on the actual decode, so a format check is
+    // not enough to tell whether it will work.
+    await expect(sharp(heic).resize(32).raw().toBuffer()).rejects.toThrow();
+  });
+
+  it('carries the EXIF orientation across a conversion that strips it', async () => {
+    const orientation = await readExifOrientation(heic);
+    expect(orientation).toBeGreaterThanOrEqual(1);
+    expect(orientation).toBeLessThanOrEqual(8);
+
+    const normalized = await normalizeImage(heic);
+    // heic-convert neither applies nor preserves the tag, so a
+    // non-identity orientation must have been re-applied by us.
+    expect((await sharp(normalized).metadata()).width).toBeGreaterThan(0);
+  });
+
+  it('extracts a complete, finite feature vector', async () => {
+    const features = await extractFeatures(heic);
+    expect(features.sourceFormat).toBe('heic');
+    expect(() => assertFeaturesUsable(features)).not.toThrow();
+    for (const [key, value] of Object.entries(features)) {
+      if (typeof value === 'number') {
+        expect(Number.isFinite(value), `${key} is not finite`).toBe(true);
+      }
+    }
+  }, 20_000);
 });
