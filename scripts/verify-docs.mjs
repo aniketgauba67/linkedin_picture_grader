@@ -156,6 +156,11 @@ const CLAIMS = [
   ['packages/scoring/src/weights/v1.ts', 'the withdrawn framing fit is explained', 'It had disabled the axis in production'],
   ['packages/eval/src/overlap.ts', 'the overlap rule records the failure it came from', 'The disagreement was only visible between them'],
   ['docs/calibration-notes.md', 'the no-merge-without-overlap rule is written down', 'RULE — no merge without overlap'],
+  ['docs/calibration-notes.md', 'the render-fitness gap is named', 'KNOWN LIMITATION — nothing measures fitness for the actual render'],
+  ['docs/calibration-notes.md', 'and says not to fix it by reweighting', 'This is not fixed by reweighting'],
+  ['docs/calibration-notes.md', 'the constants table exists', 'CONSTANTS — which parts of this system are guesses'],
+  ['docs/calibration-notes.md', 'and names the weakest numbers', 'Two numbers carry the most weight with the least evidence'],
+  ['packages/eval/src/overlap.ts', 'a silent rescale is called out as the risk', 'A silent rescale becoming routine'],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**

@@ -54,6 +54,23 @@ export interface OverlapReport {
   readonly rankAgreement: number | null;
   readonly verdict: MergeVerdict;
   readonly reasons: readonly string[];
+  /** Median of each pass over the overlap. Printed for a rescale so the
+   *  shift is a pair of numbers rather than an adjective. */
+  readonly medianA: number;
+  readonly medianB: number;
+}
+
+/** Minimum characters in an --accept-offset reason. Same shape as the
+ *  calibrator's --override-stop: getting past a gate costs an argument. */
+export const MIN_ACCEPT_REASON = 30;
+
+function median(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
+    : (sorted[mid] ?? 0);
 }
 
 function pairsOf(n: number): [number, number][] {
@@ -131,7 +148,19 @@ export function comparePasses(axis: string, a: LabelPass, b: LabelPass): Overlap
     }
   }
 
-  return { axis, a: a.name, b: b.name, overlap, alpha, offset, rankAgreement, verdict, reasons };
+  return {
+    axis,
+    a: a.name,
+    b: b.name,
+    overlap,
+    alpha,
+    offset,
+    rankAgreement,
+    verdict,
+    reasons,
+    medianA: median(aScores),
+    medianB: median(bScores),
+  };
 }
 
 export function renderOverlap(report: OverlapReport): string {
@@ -146,10 +175,44 @@ export function renderOverlap(report: OverlapReport): string {
     `  verdict           ${report.verdict.toUpperCase()}`,
   ];
   for (const reason of report.reasons) lines.push(`  ! ${reason}`);
+
+  if (report.verdict === 'rescale') {
+    // Loud on purpose. A silent rescale becoming routine is how two
+    // scales drift apart for good: each merge looks like a small
+    // correction and nobody ever re-anchors.
+    lines.push(
+      '',
+      '  ***  SCALE SHIFT  ***',
+      `    ${report.a} median ${report.medianA.toFixed(2)}`,
+      `    ${report.b} median ${report.medianB.toFixed(2)}`,
+      `    shift ${report.offset >= 0 ? '+' : ''}${report.offset.toFixed(2)} points over ${report.overlap.length} shared images`,
+      '    The two passes rank photographs the same way and score them at',
+      '    different heights. That is recoverable by rescaling, but it is',
+      '    not nothing: it means the raters were anchored differently and',
+      '    will drift again on the next pass unless anchors are agreed.',
+      `    Merging anyway requires --accept-offset "<why>" (${MIN_ACCEPT_REASON}+ chars).`,
+    );
+  }
   if (report.verdict === 'merge') {
     lines.push('  the passes agree; merging is safe');
   }
   return lines.join('\n');
+}
+
+export function parseAcceptOffset(argv: readonly string[]): string | null {
+  const at = argv.indexOf('--accept-offset');
+  if (at < 0) return null;
+  const reason = (argv[at + 1] ?? '').trim();
+  if (reason === '' || reason.startsWith('--')) {
+    throw new Error('--accept-offset needs a reason string');
+  }
+  if (reason.length < MIN_ACCEPT_REASON) {
+    throw new Error(
+      `--accept-offset reason must be at least ${MIN_ACCEPT_REASON} characters; ` +
+        'a rescale changes every label in one of the passes and the reason is the only record of why',
+    );
+  }
+  return reason;
 }
 
 /**

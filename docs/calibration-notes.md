@@ -304,7 +304,107 @@ rather than `block`, because a shifted scale is recoverable and throwing
 the labels away would be the more expensive mistake. Disagreement about
 the *order* blocks outright: there is nothing to rescale.
 
+A rescale is **not** a soft pass. It exits 2, prints both medians and
+the shift in points over the shared images, and proceeds only with
+`--accept-offset "<why>"` carrying at least 30 characters — the same
+shape as the calibrator's `--override-stop`. A silent rescale becoming
+routine is how two scales drift apart permanently: each merge looks like
+a small correction and nobody ever re-anchors.
+
 This exists because two framing passes were merged without it. Each was
 internally consistent, they shared no images, alpha could not be
 computed at all, and the merged fit was worse than either. The rule
 costs twenty images per pass.
+
+---
+
+## KNOWN LIMITATION — nothing measures fitness for the actual render
+
+The eight axes all measure **execution**. Nothing measures whether the
+photograph works as a **56px circular avatar**, which is where LinkedIn
+renders these.
+
+Observed on the ten-photo sanity ranking: a wide casual shot scored
+**8.1** where a human gave it **4**. Nothing was wrong with the
+photograph — sharp, correctly exposed, clean background, clear
+expression, single subject — and every axis said so. It is simply framed
+too wide to survive the crop. Seven axes measuring execution outvoted
+the one axis that noticed.
+
+**This is not fixed by reweighting.** Lowering the axes that are working
+to compensate for a missing one degrades measurements that are correct,
+and it would show up as noise on every photograph rather than as a
+correction on this one.
+
+### Candidate fix, for later
+
+A crop-suitability check: **does the face survive a 56px circular
+render?** Take the square centre crop the avatar is cut from, measure
+the face box area within *that* rather than within the full frame, and
+ask whether the result clears a legibility floor at 56px.
+
+It is testable without new labels — it is arithmetic over the existing
+face box — and it is the thing `faceAreaRatio` is gesturing at without
+capturing, because `faceAreaRatio` uses the full rectangular frame as
+its denominator and the avatar does not.
+
+**Named, not built.**
+
+---
+
+## CONSTANTS — which parts of this system are guesses
+
+Everything here is hand-set. Nothing in this table was fitted. It exists
+so the answer to "how much of this is a guess?" is one table rather than
+a search through code comments.
+
+`n` is the number of labelled observations behind the value. `n=0` means
+somebody picked it.
+
+### Framing
+
+| constant | value | derived how | n | what would justify changing it |
+| --- | --- | --- | --- | --- |
+| `idealRatioMin` | 0.1298 | IQR lower bound of `faceAreaRatio` over corpus photographs labelled 5 | **12** | a larger stratified pass, two raters, overlap alpha ≥ 0.65 |
+| `idealRatioMax` | 0.2396 | IQR upper bound of the same | **12** | as above |
+| `offsetTolerance` | 0.15 | guess | **0** | any labelled evidence at all; nothing has ever tested it |
+| `ratioPenaltyScale` | 5 | guess, set when the band was the much wider 0.25–0.35 | **0** | **weakest number in the system.** Against the narrower band a face covering 2% of frame still scores 3 |
+| `offsetPenaltyScale` | 2 | guess | **0** | as `offsetTolerance` |
+| `maps.framing` knots | `[0.2,1] [0.4,2] [0.6,3] [0.78,4] [0.92,5]` | hand-set after withdrawing a fit | **0** | a properly anchored two-rater corpus. A 40-image fit reached 0.797 held-out but is not shippable |
+
+### Lighting
+
+| constant | value | derived how | n | what would justify changing it |
+| --- | --- | --- | --- | --- |
+| `idealExposureMin` | 95 | guess, subsequently **confirmed near-optimal** | 125 | nothing — the centre was searched exhaustively |
+| `idealExposureMax` | 165 | as above; centre 130 is the search optimum | 125 | nothing |
+| `exposurePenaltyScale` | 0.012 | guess | **0** | this axis is a sanity check, so the bar is low |
+| `clippingFullPenaltyAt` | 0.08 | guess | **0** | as above |
+| `maps.lighting` knots | `[0,1] [0.35,2] [0.6,3] [0.8,4] [0.95,5]` | hand-set | **0** | **do not fit.** Mean facial exposure is rejected; see above |
+
+### Sharpness and resolution
+
+| constant | value | derived how | n | what would justify changing it |
+| --- | --- | --- | --- | --- |
+| `maps.sharpnessFrame` | `[0,1] [40,2] [120,3] [300,4] [700,5]` | original hand-set ladder | **0** | native-resolution photographs, 2MP+, spanning sharp to blurred |
+| `maps.sharpnessEyeRegion` | same ladder | mirrors the frame map | **0** | as above. Held-out was 0.248 on Commons thumbnails |
+| `jpegQualityFloor` | 50 | guess | **0** | measured block-artifact inflation of the Laplacian |
+| `maps.resolution` | `[200,1] [400,3] [800,5]` | **LinkedIn published spec** | n/a | a change to LinkedIn's requirement. Not a matter of taste |
+
+### Composition and gates
+
+| constant | value | derived how | n | what would justify changing it |
+| --- | --- | --- | --- | --- |
+| `CONTEXT_WEIGHTS` | 8 axes × 3 contexts | editorial product decision | n/a | never learned, by policy. A reviewed commit |
+| `DECLINE_SCORE_CAP` | 2 / 1 / 2 / 5.5 / 1 | reasoned, not measured | **0** | evidence about what a declined photograph is worth |
+| `DETECTOR_JUDGE_CONFLICT_CONFIDENCE` | 0.4 | guess | **0** | measured detector-vs-judge disagreement rates |
+| `TOP_KNOT_FLOOR` | 4 | policy | n/a | — |
+| `MIN_MERGE_ALPHA` | 0.65 | conventional, matches `alphaVerdict` | n/a | — |
+| `MIN_OVERLAP` | 20 | judgement | **0** | a power calculation on alpha's variance |
+
+### The short version
+
+Two numbers carry the most weight with the least evidence:
+**`ratioPenaltyScale`** (5, n=0) and the **framing knots** (n=0). Both
+sit on the axis that the sanity ranking showed doing the most work.
+Everything in the framing table above rests on **n=12**.

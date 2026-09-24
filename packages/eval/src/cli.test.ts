@@ -232,13 +232,65 @@ describe('runCli overlap', () => {
     expect(result.output).toMatch(/shared images\s+0/);
   });
 
-  it('exits 1 for a rescalable offset rather than blocking it', () => {
+  it('refuses a scale shift until it is explicitly acknowledged', () => {
     const result = runCli(
       ['overlap', 'old.jsonl', 'new.jsonl'],
       files(withOverlap(30, (s) => Math.max(1, s - 2))),
     );
+    expect(result.code).toBe(2);
+    expect(result.output).toMatch(/SCALE SHIFT/);
+    expect(result.output).toMatch(/--accept-offset/);
+  });
+
+  it('prints both medians and the shift, not just an adjective', () => {
+    const result = runCli(
+      ['overlap', 'old.jsonl', 'new.jsonl'],
+      files(withOverlap(30, (s) => Math.max(1, s - 2))),
+    );
+    expect(result.output).toMatch(/old\.jsonl median \d\.\d{2}/);
+    expect(result.output).toMatch(/new\.jsonl median \d\.\d{2}/);
+    expect(result.output).toMatch(/shift -\d\.\d{2} points over 30 shared images/);
+  });
+
+  it('proceeds at exit 1 once the shift is acknowledged with a reason', () => {
+    const result = runCli(
+      [
+        'overlap',
+        'old.jsonl',
+        'new.jsonl',
+        '--accept-offset',
+        'Second pass anchored low against a thumbnail corpus; rescaling by the median shift.',
+      ],
+      files(withOverlap(30, (s) => Math.max(1, s - 2))),
+    );
     expect(result.code).toBe(1);
-    expect(result.output).toMatch(/need rescaling/);
+    expect(result.output).toMatch(/SCALE SHIFT on framing, ACCEPTED/);
+    expect(result.output).toMatch(/agree anchor scores before the next pass/);
+  });
+
+  it('rejects an acknowledgement too short to be an argument', () => {
+    const result = runCli(
+      ['overlap', 'old.jsonl', 'new.jsonl', '--accept-offset', 'fine'],
+      files(withOverlap(30, (s) => Math.max(1, s - 2))),
+    );
+    expect(result.code).toBe(2);
+    expect(result.output).toMatch(/at least 30 characters/);
+  });
+
+  it('does not let --accept-offset past a genuine block', () => {
+    // Disagreeing rank order is not a shift and cannot be rescaled.
+    const result = runCli(
+      [
+        'overlap',
+        'old.jsonl',
+        'new.jsonl',
+        '--accept-offset',
+        'I would like to merge these two passes regardless of what the check says.',
+      ],
+      files(withOverlap(30, (s) => 6 - s)),
+    );
+    expect(result.code).toBe(2);
+    expect(result.output).toMatch(/BLOCKED/);
   });
 
   it('is listed in the usage, so it cannot be missed', () => {

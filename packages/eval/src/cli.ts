@@ -26,7 +26,7 @@ import {
 } from './metrics.js';
 import { alignById, parseLabelsJsonl, ratingsByUnit, type LabelRecord } from './labels.js';
 import { reportCeiling, renderCeiling } from './ceiling.js';
-import { comparePasses, renderOverlap, type LabelPass } from './overlap.js';
+import { comparePasses, parseAcceptOffset, renderOverlap, type LabelPass } from './overlap.js';
 import {
   axisDistribution,
   compositeHistogram,
@@ -370,7 +370,12 @@ function commandCeiling(humanPath: string, modelPath: string, read: ReadTextFile
  * because a merge that should not happen is not a warning - it produces
  * a fit that looks fine and is not.
  */
-function commandOverlap(oldPath: string, newPath: string, read: ReadTextFile): CliResult {
+function commandOverlap(
+  oldPath: string,
+  newPath: string,
+  read: ReadTextFile,
+  argv: readonly string[],
+): CliResult {
   const out: string[] = [];
   const older = load(oldPath, read, out);
   const newer = load(newPath, read, out);
@@ -398,8 +403,16 @@ function commandOverlap(oldPath: string, newPath: string, read: ReadTextFile): C
     return { name, labels };
   };
 
+  let accepted: string | null;
+  try {
+    accepted = parseAcceptOffset(argv);
+  } catch (error) {
+    out.push('', error instanceof Error ? error.message : 'bad --accept-offset');
+    return { code: 2, output: out.join('\n') };
+  }
+
   let blocked = 0;
-  let rescale = 0;
+  const shifted: string[] = [];
   for (const axis of axes) {
     const report = comparePasses(
       axis,
@@ -408,7 +421,7 @@ function commandOverlap(oldPath: string, newPath: string, read: ReadTextFile): C
     );
     out.push(renderOverlap(report));
     if (report.verdict === 'block') blocked += 1;
-    if (report.verdict === 'rescale') rescale += 1;
+    if (report.verdict === 'rescale') shifted.push(axis);
   }
 
   out.push('');
@@ -419,8 +432,17 @@ function commandOverlap(oldPath: string, newPath: string, read: ReadTextFile): C
     );
     return { code: 2, output: out.join('\n') };
   }
-  if (rescale > 0) {
-    out.push(`${rescale} axis/axes need rescaling before the merge. The order agrees; the height does not.`);
+  if (shifted.length > 0) {
+    if (accepted === null) {
+      out.push(
+        `SCALE SHIFT on ${shifted.join(', ')}. The order agrees; the height does not.`,
+        'Merging requires an explicit acknowledgement:',
+        '  --accept-offset "<why a rescale is the right call here>"',
+      );
+      return { code: 2, output: out.join('\n') };
+    }
+    out.push(`SCALE SHIFT on ${shifted.join(', ')}, ACCEPTED:`, `  "${accepted}"`);
+    out.push('Rescale before merging, and agree anchor scores before the next pass.');
     return { code: 1, output: out.join('\n') };
   }
   out.push('Every axis agrees. Merging is safe.');
@@ -443,8 +465,8 @@ export function runCli(argv: readonly string[], read: ReadTextFile = defaultRead
         ? commandCeiling(rest[0], rest[1], read)
         : { code: 2, output: USAGE };
     case 'overlap':
-      return rest.length === 2 && rest[0] !== undefined && rest[1] !== undefined
-        ? commandOverlap(rest[0], rest[1], read)
+      return rest.length >= 2 && rest[0] !== undefined && rest[1] !== undefined
+        ? commandOverlap(rest[0], rest[1], read, rest)
         : { code: 2, output: USAGE };
     default:
       return { code: command === undefined || command === '--help' || command === '-h' ? 0 : 2, output: USAGE };
