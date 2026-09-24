@@ -186,12 +186,18 @@ importers:
 
   training:
     dependencies:
+      '@pps/eval':
+        specifier: workspace:*
+        version: link:../packages/eval
       '@pps/features':
         specifier: workspace:*
         version: link:../packages/features
       '@pps/schema':
         specifier: workspace:*
         version: link:../packages/schema
+      '@pps/scoring':
+        specifier: workspace:*
+        version: link:../packages/scoring
       zod:
         specifier: ^3.24.1
         version: 3.25.76

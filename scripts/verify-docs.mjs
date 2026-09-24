@@ -121,6 +121,9 @@ const CLAIMS = [
   ['training/paths.ts', 'and that a leak cannot be undone', 'the only honest fix is 125 new hand-labelled images'],
   ['training/fit-isolation.test.ts', 'neither half of the guard is sufficient alone', 'Neither catches everything alone'],
   ['training/extract-validation.ts', 'says why both pre-checks run before any write', 'because both failures are silent otherwise'],
+  ['training/calibrate.ts', 'in-sample correlation is named as flattering', 'an in-sample number and it always flatters'],
+  ['training/calibrate.ts', 'scale invariance is not an exemption from the top-knot check', 'and that is the failure that actually bites'],
+  ['training/isotonic-fit.ts', 'two-sided axes are reduced before fitting', 'a monotone fit cannot represent'],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**

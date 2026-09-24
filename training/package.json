@@ -8,14 +8,17 @@
     "build": "tsc -p tsconfig.json",
     "collect": "node dist/collect-corpus.js",
     "validate:extract": "node dist/extract-validation.js",
+    "calibrate": "node dist/calibrate.js",
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@pps/eval": "workspace:*",
     "@pps/features": "workspace:*",
     "@pps/schema": "workspace:*",
+    "@pps/scoring": "workspace:*",
     "zod": "^3.24.1"
   },
   "devDependencies": {
