@@ -9,6 +9,8 @@
 export * from './axes.js';
 export * from './features.js';
 export { WeightsVersionError } from './errors.js';
+export { FEATURE_ROLES, FEATURE_ROLE_FIELDS, featureGaps } from './roles.js';
+export type { FeatureRole, FeatureRoleEntry } from './roles.js';
 export * from './assessment.js';
 export * from './result.js';
 export * from './outcome.js';

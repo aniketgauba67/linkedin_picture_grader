@@ -1,8 +1,25 @@
 import type { Knot } from '../isotonic.js';
 
 /**
- * Hand-set calibration. Prompt 11 refits the knots from labelled data
- * and overwrites this file.
+ * PROVISIONAL. DO NOT HAND-TUNE THESE NUMBERS - THEY GET FITTED.
+ *
+ * Every knot below is an old step-ladder threshold re-expressed as a
+ * knot. Not one of them has been validated against labelled data, and no
+ * individual value should be treated as meaningful: they are a shape to
+ * start from, not a calibration.
+ *
+ * The change from stepped thresholds to linear interpolation is
+ * deliberate and right in direction - a score should move continuously
+ * with the measurement rather than jumping at an arbitrary boundary -
+ * but it also means the boundary behaviour is now different from
+ * anything that was ever tested, in a way nobody has measured.
+ *
+ * Prompt 11 replaces this file wholesale from fitted data. Adjusting a
+ * number here by hand buys a local improvement on whatever photo
+ * prompted it and silently costs accuracy everywhere else, which is the
+ * failure mode calibration exists to prevent.
+ *
+ * Prompt 11 refits the knots from labelled data and overwrites this file.
  *
  * A .ts module rather than JSON on purpose: this package has to load
  * unchanged in Node, Deno and the browser, and JSON import attributes
