@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:turbo": "turbo run test",
+    "eval": "pnpm --silent --filter @pps/eval build && node packages/eval/dist/cli.js",
     "clean": "turbo run clean && rm -rf node_modules",
     "postinstall": "node scripts/check-lfs.mjs && node scripts/verify-models.mjs",
     "verify:models": "node scripts/verify-models.mjs",

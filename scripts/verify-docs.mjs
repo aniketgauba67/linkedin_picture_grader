@@ -78,6 +78,24 @@ const CLAIMS = [
   ['CLAUDE.md', 'grep masks the exit status before it', "reports **grep's** exit status, not `cmd`'s"],
   ['CLAUDE.md', 'pipefail is set in the workflow', 'defaults: run: shell: bash'],
   ['.github/workflows/ci.yml', 'workflow sets pipefail', 'shell: bash'],
+
+  // --- the orphan audit and the provisional knots ---
+  ['packages/scoring/src/weights/v1.ts', 'the knots say they are provisional', 'DO NOT HAND-TUNE THESE NUMBERS'],
+  ['packages/scoring/src/weights/v1.ts', 'Prompt 11 replaces the file wholesale', 'Prompt 11 replaces this file wholesale'],
+  ['packages/schema/src/roles.ts', 'every feature declares what it is for', 'What every field in the feature vector is FOR'],
+  ['packages/schema/src/roles.ts', 'a gap is named as a gap, not filed as diagnostic', "role: 'gap'"],
+
+  // --- packages/eval: claims that are load-bearing because a wrong
+  //     number here invalidates every conclusion drawn from it ---
+  ['packages/eval/src/metrics.ts', 'alpha warns what a wrong implementation costs', 'GET THIS WRONG AND EVERY DOWNSTREAM CONCLUSION IS WRONG'],
+  ['packages/eval/src/metrics.ts', 'pairwise accuracy is the headline, not MSE', 'THIS IS THE HEADLINE NUMBER, not MSE'],
+  ['packages/eval/src/metrics.test.ts', 'alpha is checked against a published value, not its own output', 'The expectation is the reference value, not ours'],
+  ['packages/eval/src/metrics.test.ts', 'the cross-check against an independent implementation is recorded', 'All 41 agreed to within 4.4e-16'],
+  ['packages/eval/src/split.ts', 'splits cut on people because phash cannot see them', 'so phashDedup will not catch them'],
+  ['packages/eval/src/split.ts', 'nested CV says what conflating the loops costs', 'by roughly 3-5 points'],
+  ['packages/eval/src/ceiling.ts', 'the ceiling explains what it makes visible', 'A model cannot be more consistent with the labels than the labels are with themselves'],
+  ['packages/eval/src/ceiling.ts', 'comparing unlike statistics is called out', 'produces a chart that means nothing'],
+  ['packages/eval/src/labels.ts', 'the parser says why it is schema-agnostic', 'deliberately schema-agnostic about axis names'],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**
