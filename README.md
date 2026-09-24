@@ -26,6 +26,28 @@ pnpm test
 pnpm dev
 ```
 
+## CI and branch protection
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to
+`main`: install with `--frozen-lockfile`, then build, lint, typecheck,
+test.
+
+**Enable `build, lint, typecheck, test` as a required status check** on
+`main` (Settings → Branches → Branch protection rules). Until that is
+switched on the workflow reports failures but nothing stops a merge.
+
+`pnpm typecheck` is the step worth protecting. Every package typechecks
+through its `tsconfig.test.json`, which includes the test files - and
+that is the only thing keeping the compile-time assertions in
+`packages/schema/src/mirror.test.ts` honest. Those assertions are what
+stop `@pps/scoring`'s dependency-free mirror types drifting from the zod
+schemas. They silently did nothing for several commits because the build
+tsconfig excluded test files from the program.
+
+CI deliberately does not set `PPS_TEST_DATABASE_URL` or `PPS_TEST_HEIC`,
+so the migration and HEIC suites skip rather than fail. A pull request
+from a fork gets a green run without needing any secret.
+
 ## Commands
 
 | Command | What it does |

@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Read-only. Nothing in this workflow writes to the repo, and a fork PR
+# should not be handed anything more than it needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Turbo's cache is per-runner and every run gets a fresh one, so a
+  # local cache buys nothing here. Remote caching is deliberately NOT
+  # configured: a misconfigured one serves stale results that look like
+  # passes, which is worse than no cache at all. Correctness first.
+  TURBO_TELEMETRY_DISABLED: 1
+  DO_NOT_TRACK: 1
+
+jobs:
+  verify:
+    name: build, lint, typecheck, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Must come before setup-node: `cache: pnpm` needs pnpm on PATH to
+      # resolve the store directory.
+      #
+      # No `version` on purpose. pnpm/action-setup reads the
+      # `packageManager` field from package.json, so the version is
+      # pinned in exactly one place rather than two that can drift.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # --frozen-lockfile is the point of this step, not a detail. It
+      # fails when pnpm-lock.yaml disagrees with any package.json, which
+      # is what catches a dependency added locally and never committed -
+      # otherwise invisible until someone clones fresh.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Lint
+        run: pnpm lint
+
+      # The one that matters. Every package typechecks through
+      # tsconfig.test.json, which includes the test files - that is what
+      # keeps the compile-time assertions in the mirror tests honest.
+      # They regressed silently once because tests were excluded here.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        # Deliberately no PPS_TEST_DATABASE_URL and no PPS_TEST_HEIC.
+        #
+        # The migration suites need a Postgres with pgvector and pg_cron,
+        # and the HEIC suite needs a real iPhone photo that is never
+        # committed. Both skip cleanly when their variable is absent, so
+        # a fork PR with no secrets gets a green run rather than a
+        # confusing failure. See the README for how to run them locally.
+        run: pnpm test
+
+      - name: Report skipped suites
+        if: always()
+        run: |
+          echo "Integration suites NOT run in CI (they skip without their env var):"
+          echo "  - migrations + concurrency   need PPS_TEST_DATABASE_URL"
+          echo "  - real iPhone HEIC           needs PPS_TEST_HEIC"
+          echo "Run them locally: see README > Database and README > HEIC."
