@@ -110,7 +110,7 @@ function readFlag(vector: Record<string, unknown>, field: string): boolean {
 
 function readFeatures(vector: Record<string, unknown>): PixelFeatures & {
   yaw: number;
-  pitch: number;
+  pitch: number | null;
 } {
   return {
     width: readFeature(vector, 'width'),
@@ -127,7 +127,10 @@ function readFeatures(vector: Record<string, unknown>): PixelFeatures & {
     faceCenterOffsetY: readFeature(vector, 'faceCenterOffsetY'),
     faceCount: readFeature(vector, 'faceCount'),
     yaw: readFeature(vector, 'yaw'),
-    pitch: readFeature(vector, 'pitch'),
+    // Null means unmeasurable, so the off-axis penalty is computed over
+    // the pose components that exist. Reading it as 0 would make the
+    // penalty silently yaw-only while looking like it used both.
+    pitch: readNullableFeature(vector, 'pitch'),
   };
 }
 
@@ -211,8 +214,15 @@ Deno.serve(async (request: Request): Promise<Response> => {
     solo: verdict.assessment.solo.score,
   };
 
+  // `solo` is judged by the model and `faceCount` is measured. They are
+  // never merged into a score; a contradiction between them just means
+  // the result deserves less trust.
+  const confidence = computeConfidence(computed, {
+    soloScore: verdict.assessment.solo.score,
+  });
+
   return json({
     status: 'scored',
-    result: scorePhoto(axes, rawContext, { confidence: computeConfidence(computed) }),
+    result: scorePhoto(axes, rawContext, { confidence }),
   });
 });

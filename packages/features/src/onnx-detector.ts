@@ -1,5 +1,5 @@
 import type { Detector, FaceBox, FaceObservation } from './face.js';
-import type { LumaPlane } from './luma.js';
+import type { RgbPlane } from './luma.js';
 
 export interface OnnxDetectorOptions {
   /** Path to the .onnx graph. Lives under models/, which is gitignored. */
@@ -38,7 +38,7 @@ export function createOnnxDetector(options: OnnxDetectorOptions): Detector {
   }
 
   return {
-    async detect(plane: LumaPlane): Promise<readonly FaceObservation[]> {
+    async detect(plane: RgbPlane): Promise<readonly FaceObservation[]> {
       const active = await getSession();
       const ort = await import('onnxruntime-node');
 
@@ -67,15 +67,9 @@ export function createOnnxDetector(options: OnnxDetectorOptions): Detector {
       // which is a separate model. Until that is wired up they read 0,
       // which costs confidence rather than inventing a head angle.
       return decodeBoxes(outputs, active.outputNames, plane, inputSize, minConfidence).map(
-        (box): FaceObservation => ({
-          box,
-          eyeRegion: null,
-          yaw: 0,
-          pitch: 0,
-          roll: 0,
-          eyeOpenness: 0,
-          smileIntensity: 0,
-        }),
+        // No landmarks from this graph, so no eye band and no pose. The
+        // consumers treat null as "unmeasurable" rather than zero.
+        (box): FaceObservation => ({ box, keypoints: null }),
       );
     },
   };
@@ -88,7 +82,7 @@ export function createOnnxDetector(options: OnnxDetectorOptions): Detector {
 export function decodeBoxes(
   outputs: Record<string, { data: ArrayLike<number> }>,
   outputNames: readonly string[],
-  plane: LumaPlane,
+  plane: RgbPlane,
   inputSize: number,
   minConfidence: number,
 ): readonly FaceBox[] {

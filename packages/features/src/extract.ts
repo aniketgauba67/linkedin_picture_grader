@@ -1,12 +1,22 @@
 import type { ComputedFeatures } from '@pps/schema';
 import { ComputedFeatures as ComputedFeaturesSchema } from '@pps/schema';
-import type { LumaPlane } from './luma.js';
+import type { LumaPlane, RgbPlane } from './luma.js';
 import { cropPlane } from './luma.js';
 import { laplacianVariance } from './sharpness.js';
 import { lightingStats } from './lighting.js';
 import { estimateJpegQuality } from './jpeg-quality.js';
 import { framingMetrics } from './framing.js';
-import { detectFaces, eyeRegionOf, primaryFace } from './face.js';
+import {
+  assertFacesUsable,
+  detectFaces,
+  eyeRegionOf,
+  primaryFace,
+  rollFrom,
+  secondLargestFaceRatio,
+  yawFrom,
+} from './face.js';
+import type { FaceObservation } from './face.js';
+import type sharp from 'sharp';
 import { normalizedPipeline, prepareImage } from './normalize.js';
 import { asDecodeError } from './errors.js';
 
@@ -29,6 +39,16 @@ export const ANALYSIS_EDGE = 1024;
 /** A crop smaller than this cannot be convolved by a 3x3 kernel. */
 const MIN_CONVOLVABLE_EDGE = 3;
 
+/** The analysis-scale resize, shared by both planes so they agree exactly. */
+function toAnalysisScale(image: Buffer): sharp.Sharp {
+  return normalizedPipeline(image).resize({
+    width: ANALYSIS_EDGE,
+    height: ANALYSIS_EDGE,
+    fit: 'inside',
+    // Deliberately NOT withoutEnlargement: see ANALYSIS_EDGE.
+  });
+}
+
 /**
  * The normalised image as a luma plane at the analysis scale. Composes
  * onto the normalisation pipeline rather than re-decoding an encoded
@@ -36,13 +56,7 @@ const MIN_CONVOLVABLE_EDGE = 3;
  */
 export async function toLumaPlane(image: Buffer): Promise<LumaPlane> {
   try {
-    const { data, info } = await normalizedPipeline(image)
-      .resize({
-        width: ANALYSIS_EDGE,
-        height: ANALYSIS_EDGE,
-        fit: 'inside',
-        // Deliberately NOT withoutEnlargement: see ANALYSIS_EDGE.
-      })
+    const { data, info } = await toAnalysisScale(image)
       .greyscale()
       .raw()
       .toBuffer({ resolveWithObject: true });
@@ -50,6 +64,26 @@ export async function toLumaPlane(image: Buffer): Promise<LumaPlane> {
     return { data: new Uint8Array(data), width: info.width, height: info.height };
   } catch (error) {
     throw asDecodeError(error, 'Could not rasterise image for analysis');
+  }
+}
+
+/**
+ * The same image as colour, at the same dimensions.
+ *
+ * The detector needs colour - face models lose accuracy on greyscale -
+ * but it must see exactly the frame the measurements were taken on, or
+ * every box it returns would need rescaling and the two would drift.
+ */
+export async function toRgbPlane(image: Buffer): Promise<RgbPlane> {
+  try {
+    const { data, info } = await toAnalysisScale(image)
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    return { data: new Uint8Array(data), width: info.width, height: info.height };
+  } catch (error) {
+    throw asDecodeError(error, 'Could not rasterise image for detection');
   }
 }
 
@@ -67,7 +101,7 @@ function clamp(value: number, min: number, max: number): number {
  * same value, the full-frame fallback would rescue exactly the photo this
  * measurement exists to catch.
  */
-function measureEyeRegion(plane: LumaPlane, face: ReturnType<typeof primaryFace>): number | null {
+function measureEyeRegion(plane: LumaPlane, face: FaceObservation | null): number | null {
   if (face === null) {
     return null;
   }
@@ -99,10 +133,16 @@ export async function extractFeatures(image: Buffer): Promise<ComputedFeatures> 
   const { decodable, source } = await prepareImage(image);
   const { width, height } = source;
 
-  const plane = await toLumaPlane(decodable);
+  // One decode, two planes at identical dimensions: luma for the pixel
+  // measures, RGB for the detector. A box from the detector is therefore
+  // usable by framing.ts and eyeRegionOf with no rescaling at all.
+  const [plane, rgb] = await Promise.all([toLumaPlane(decodable), toRgbPlane(decodable)]);
+
   const lighting = lightingStats(plane);
-  const faces = await detectFaces(plane);
-  const face = primaryFace(faces);
+  const faces = await detectFaces(rgb);
+  assertFacesUsable(faces);
+  const face = primaryFace(faces, plane.width, plane.height);
+  const points = face?.keypoints ?? null;
 
   const sharpnessEyeRegion = measureEyeRegion(plane, face);
   const framing = framingMetrics(face?.box ?? null, plane.width, plane.height);
@@ -127,11 +167,19 @@ export async function extractFeatures(image: Buffer): Promise<ComputedFeatures> 
     faceCenterOffsetY: clamp(framing.faceCenterOffsetY, -1, 1),
     faceCount: faces.length,
 
-    yaw: clamp(face?.yaw ?? 0, -180, 180),
-    pitch: clamp(face?.pitch ?? 0, -180, 180),
-    roll: clamp(face?.roll ?? 0, -180, 180),
-    eyeOpenness: clamp(face?.eyeOpenness ?? 0, 0, 1),
-    smileIntensity: clamp(face?.smileIntensity ?? 0, 0, 1),
+    // Measured from the five keypoints.
+    yaw: points === null ? 0 : clamp(yawFrom(points), -180, 180),
+    roll: points === null ? 0 : clamp(rollFrom(points), -180, 180),
+
+    // Null, not 0: five points cannot recover pitch, and a mesh model is
+    // what will provide these. A fabricated zero would read as a
+    // measurement and silently neuter the off-axis confidence penalty.
+    pitch: null,
+    eyeOpenness: null,
+    smileIntensity: null,
+
+    primaryFaceConfidence: face === null ? null : clamp(face.box.confidence, 0, 1),
+    secondLargestFaceRatio: secondLargestFaceRatio(faces, plane.width, plane.height),
 
     isGrayscale: source.isGrayscale,
     aspectExtreme: source.aspectExtreme,

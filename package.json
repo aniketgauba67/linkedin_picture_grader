@@ -15,7 +15,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:turbo": "turbo run test",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "postinstall": "node scripts/check-lfs.mjs && node scripts/verify-models.mjs",
+    "verify:models": "node scripts/verify-models.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

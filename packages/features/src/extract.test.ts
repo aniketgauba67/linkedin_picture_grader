@@ -18,12 +18,7 @@ afterEach(() => {
 function observation(overrides: Partial<FaceObservation> = {}): FaceObservation {
   return {
     box: { x: 256, y: 256, width: 512, height: 512, confidence: 0.95 },
-    eyeRegion: null,
-    yaw: 0,
-    pitch: 0,
-    roll: 0,
-    eyeOpenness: 0.8,
-    smileIntensity: 0.3,
+    keypoints: null,
     ...overrides,
   };
 }
@@ -72,17 +67,24 @@ describe('extractFeatures', () => {
   });
 
   it('emits a finite number for every measurement, or a documented null', async () => {
+    // With no detector registered there is no face, so every
+    // face-derived field is legitimately absent. Nothing else may be.
+    const unmeasurable = new Set([
+      'sharpnessEyeRegion',
+      'pitch',
+      'eyeOpenness',
+      'smileIntensity',
+      'primaryFaceConfidence',
+      'secondLargestFaceRatio',
+    ]);
     const features = await extractFeatures(await noise(400, 400));
     for (const field of NUMERIC_FEATURE_FIELDS) {
       const value = features[field];
-      // sharpnessEyeRegion is the one field allowed to be null, and only
-      // when there was nothing to measure.
       if (value === null) {
-        expect(field).toBe('sharpnessEyeRegion');
-        expect(features.eyeRegionMeasured).toBe(false);
+        expect(unmeasurable.has(field), `${field} may not be null`).toBe(true);
         continue;
       }
-      expect(Number.isFinite(value)).toBe(true);
+      expect(Number.isFinite(value), `${field} is not finite`).toBe(true);
     }
   });
 
@@ -107,6 +109,7 @@ describe('extractFeatures', () => {
     expect(features.faceAreaRatio).toBe(0);
     expect(features.sharpnessEyeRegion).toBeNull();
     expect(features.eyeRegionMeasured).toBe(false);
+    expect(features.primaryFaceConfidence).toBeNull();
     expect(scoreComputedAxes(features).framing).toBe(1);
   });
 
@@ -131,14 +134,25 @@ describe('extractFeatures', () => {
     expect(features.faceCount).toBe(1);
   });
 
-  it('carries head pose and landmark measurements through', async () => {
+  it('derives pose from keypoints and leaves the rest null', async () => {
     setDetector({
-      detect: async () => [observation({ yaw: 12.5, pitch: -4, roll: 2, eyeOpenness: 0.6 })],
+      detect: async () => [
+        observation({
+          keypoints: {
+            leftEye: [400, 380],
+            rightEye: [500, 420],
+            nose: [450, 470],
+            leftMouth: [410, 530],
+            rightMouth: [490, 530],
+          },
+        }),
+      ],
     });
     const features = await extractFeatures(await noise(800, 800));
-    expect(features.yaw).toBeCloseTo(12.5);
-    expect(features.pitch).toBeCloseTo(-4);
-    expect(features.eyeOpenness).toBeCloseTo(0.6);
+    expect(features.roll).toBeGreaterThan(15); // eye line tilted down-right
+    expect(features.pitch).toBeNull();
+    expect(features.eyeOpenness).toBeNull();
+    expect(features.smileIntensity).toBeNull();
   });
 
   it('counts every face, not just the one it measured', async () => {
@@ -151,18 +165,27 @@ describe('extractFeatures', () => {
     expect((await extractFeatures(await noise(1024, 1024))).faceCount).toBe(2);
   });
 
-  it('measures the highest-confidence face when several are present', async () => {
+  it('measures the LARGEST face when several are present, not the most confident', async () => {
+    // Confidence ordering is not stable across runs; box area is. This
+    // is the rule that keeps framing deterministic.
     setDetector({
       detect: async () => [
-        observation({ box: { x: 0, y: 0, width: 64, height: 64, confidence: 0.51 }, yaw: 40 }),
-        observation({ yaw: 5 }),
+        observation({ box: { x: 0, y: 0, width: 200, height: 200, confidence: 0.99 } }),
+        observation({ box: { x: 300, y: 300, width: 500, height: 500, confidence: 0.55 } }),
       ],
     });
-    expect((await extractFeatures(await noise(1024, 1024))).yaw).toBeCloseTo(5);
+    const features = await extractFeatures(await noise(1024, 1024));
+    // 500/1024 squared of the frame, so the big low-confidence box won.
+    expect(features.faceAreaRatio).toBeCloseTo((500 * 500) / (1024 * 1024), 2);
+    expect(features.primaryFaceConfidence).toBeCloseTo(0.55);
   });
 
-  it('refuses to cache a NaN a detector produced', async () => {
-    setDetector({ detect: async () => [observation({ yaw: Number.NaN })] });
+  it('rejects a NaN from the detector loudly, rather than dropping the face', async () => {
+    setDetector({
+      detect: async () => [
+        observation({ box: { x: 0, y: 0, width: Number.NaN, height: 400, confidence: 0.9 } }),
+      ],
+    });
     await expect(extractFeatures(await noise(512, 512))).rejects.toThrow();
   });
 

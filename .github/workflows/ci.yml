@@ -29,7 +29,17 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      # lfs: true is load-bearing. Without it checkout leaves ~130 byte
+      # pointer files in place of the model, everything looks present,
+      # and the first thing to touch it fails with an opaque ONNX parse
+      # error. The postinstall hash check catches that too, but only
+      # after a confusing install.
       - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Show Git LFS state
+        run: git lfs ls-files
 
       # Must come before setup-node: `cache: pnpm` needs pnpm on PATH to
       # resolve the store directory.
@@ -49,6 +59,8 @@ jobs:
       # is what catches a dependency added locally and never committed -
       # otherwise invisible until someone clones fresh.
       - name: Install
+        # postinstall runs scripts/verify-models.mjs, which hashes the
+        # pinned artifacts and fails loudly on an unresolved LFS pointer.
         run: pnpm install --frozen-lockfile
 
       - name: Build

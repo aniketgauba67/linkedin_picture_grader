@@ -20,9 +20,22 @@ coverage/
 .env.*
 !.env.example
 
-# Training data and model weights are never committed.
+# Training data is never committed, and neither is the model corpus.
 data/
 models/
+# One exception, allowed explicitly rather than by weakening the rule:
+# the face detector weights. A pinned 2.4MB weight file is a different
+# thing from training images - it is required to build, it never grows,
+# and it is stored through Git LFS. Its hash is pinned in
+# models/manifest.json and checked on install.
+!models/det_500m.onnx
+!models/manifest.json
+
+# The one committed image, for the same reason: a single 45KB
+# public-domain portrait that proves the detector loads and fires.
+# Everything else image-shaped stays out.
+!packages/features/fixtures/
+!packages/features/fixtures/portrait.jpg
 
 # Supabase local stack
 supabase/.branches/

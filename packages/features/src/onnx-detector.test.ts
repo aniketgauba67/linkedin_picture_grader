@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { LumaPlane } from './luma.js';
+import type { RgbPlane } from './luma.js';
 import { decodeBoxes } from './onnx-detector.js';
 
-const plane: LumaPlane = { data: new Uint8Array(640 * 640), width: 640, height: 640 };
+const plane: RgbPlane = { data: new Uint8Array(640 * 640 * 3), width: 640, height: 640 };
 
 describe('decodeBoxes', () => {
   it('scales boxes from graph input coordinates back onto the analysis plane', () => {

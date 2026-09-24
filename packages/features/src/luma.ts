@@ -26,6 +26,18 @@ export function sampleAt(plane: LumaPlane, x: number, y: number): number {
   return value ?? 0;
 }
 
+/**
+ * An 8-bit RGB plane, interleaved. Face detectors degrade badly on
+ * greyscale, so the detector gets this while the pixel measures get the
+ * luma plane - both derived from one decode at the same dimensions, so a
+ * box from the detector needs no rescaling to be used by framing.ts.
+ */
+export interface RgbPlane {
+  readonly data: Uint8Array;
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface Region {
   readonly x: number;
   readonly y: number;

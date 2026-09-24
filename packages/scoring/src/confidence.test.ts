@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ConfidenceInputs } from './confidence.js';
-import { computeConfidence } from './confidence.js';
+import { computeConfidence, subjectDisagreement } from './confidence.js';
 
 const certain: ConfidenceInputs = {
   width: 1600,
@@ -48,10 +48,49 @@ describe('computeConfidence', () => {
     ).toBeCloseTo(0.9);
   });
 
+  it('computes the off-axis penalty over measured pose only', () => {
+    // pitch is null until a mesh model ships. A fabricated 0 would make
+    // max(|yaw|, |pitch|) silently yaw-only while looking like it used
+    // both; null says so, and upgrades cleanly when pitch arrives.
+    expect(computeConfidence({ ...certain, yaw: 2, pitch: null })).toBe(1);
+    expect(computeConfidence({ ...certain, yaw: 50, pitch: null })).toBeCloseTo(0.8);
+    // Once pitch exists it contributes without any other change.
+    expect(computeConfidence({ ...certain, yaw: 2, pitch: 50 })).toBeCloseTo(0.8);
+  });
+
+  it('is unchanged when every pose component is unmeasurable', () => {
+    expect(computeConfidence({ ...certain, yaw: 0, pitch: null })).toBe(1);
+  });
+
   it('is not a quality signal - a badly lit square-on face is still certain', () => {
     expect(
       computeConfidence({ ...certain, dynamicRange: 20, clippedShadows: 0.4 }),
     ).toBe(1);
+  });
+
+  it('lowers confidence when the detector and the model disagree on subjects', () => {
+    // Measurements report, judgments judge, disagreement lowers
+    // confidence. faceCount never feeds the solo score itself.
+    const crowd = { ...certain, faceCount: 3 };
+    const withoutJudgement = computeConfidence(crowd);
+    const contradicted = computeConfidence(crowd, { soloScore: 5 });
+    expect(contradicted).toBeCloseTo(withoutJudgement - 0.2);
+  });
+
+  it('does not penalise agreement in either direction', () => {
+    // Several faces, model says not solo: they agree.
+    expect(computeConfidence({ ...certain, faceCount: 3 }, { soloScore: 2 })).toBeCloseTo(
+      computeConfidence({ ...certain, faceCount: 3 }),
+    );
+    // One face, model says solo: they agree.
+    expect(computeConfidence(certain, { soloScore: 5 })).toBe(1);
+  });
+
+  it('flags the disagreement itself, independent of scoring', () => {
+    expect(subjectDisagreement(3, 5)).toBe(true);
+    expect(subjectDisagreement(1, 2)).toBe(true);
+    expect(subjectDisagreement(1, 5)).toBe(false);
+    expect(subjectDisagreement(3, 1)).toBe(false);
   });
 
   it('stays within 0-1 when everything goes wrong at once', () => {
@@ -62,7 +101,7 @@ describe('computeConfidence', () => {
       pitch: 60,
       jpegQualityEstimate: 5,
       faceCenterOffsetX: 0.9,
-    });
+    }, { soloScore: 5 });
     expect(value).toBeGreaterThanOrEqual(0);
     expect(value).toBeLessThanOrEqual(1);
   });

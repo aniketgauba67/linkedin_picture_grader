@@ -5,7 +5,7 @@ import { z } from 'zod';
  * column next to the cached vector, not as a field of the vector, so an
  * older row is detected and re-extracted rather than silently mis-scored.
  */
-export const FEATURE_VECTOR_VERSION = 3;
+export const FEATURE_VECTOR_VERSION = 4;
 
 /**
  * The cache key for an extraction, derived from the version rather than
@@ -87,14 +87,44 @@ export const ComputedFeatures = z.object({
   faceCount: z.number().finite().int().nonnegative(),
 
   // --- head pose and landmarks (MediaPipe) ---------------------------
-  /** Head rotation in degrees. 0 is square to the lens. */
+  /**
+   * Head rotation in degrees. 0 is square to the lens.
+   *
+   * `yaw` and `roll` are derived from the five detected keypoints: roll
+   * from the angle of the eye-to-eye line, yaw from the nose offset
+   * against the eye midpoint.
+   */
   yaw: z.number().finite().min(-180).max(180),
-  pitch: z.number().finite().min(-180).max(180),
   roll: z.number().finite().min(-180).max(180),
-  /** 0 closed, 1 fully open. */
-  eyeOpenness: z.number().finite().min(0).max(1),
-  /** 0 neutral, 1 broad. Not a judgement, just a landmark measurement. */
-  smileIntensity: z.number().finite().min(0).max(1),
+  /**
+   * `null` because five keypoints cannot recover it: pitch needs a
+   * vertical reference the 5-point detector does not provide.
+   *
+   * Emitting 0 would be worse than emitting nothing. The off-axis
+   * confidence penalty is a max over pose components, so a constant 0
+   * contributes nothing while looking exactly like a measurement - the
+   * penalty would silently become yaw-only with no way to tell. Null
+   * says so out loud, and upgrades cleanly when a mesh model lands.
+   */
+  pitch: z.number().finite().min(-180).max(180).nullable(),
+  /** 0 closed, 1 fully open. Null until a mesh model provides it. */
+  eyeOpenness: z.number().finite().min(0).max(1).nullable(),
+  /**
+   * 0 neutral, 1 broad. Not a judgement, just a landmark measurement.
+   * Null until a mesh model provides it.
+   */
+  smileIntensity: z.number().finite().min(0).max(1).nullable(),
+  /**
+   * Detector confidence for the face all the geometry describes, or null
+   * when no face was selected.
+   */
+  primaryFaceConfidence: z.number().finite().min(0).max(1).nullable(),
+  /**
+   * Area of the second-largest qualifying face over the primary's, or
+   * null when there is no second face. Above ~0.6 the subject is
+   * genuinely ambiguous and the UI should say so rather than pick one.
+   */
+  secondLargestFaceRatio: z.number().finite().min(0).max(1).nullable(),
 
   // --- provenance and shape ------------------------------------------
   /**
@@ -171,10 +201,12 @@ export const FEATURE_RULES: Readonly<Record<NumericFeatureField, FieldRule>> = {
   faceCenterOffsetY: { min: -1, max: 1 },
   faceCount: { min: 0, max: Number.MAX_SAFE_INTEGER, int: true },
   yaw: { min: -180, max: 180 },
-  pitch: { min: -180, max: 180 },
   roll: { min: -180, max: 180 },
-  eyeOpenness: { min: 0, max: 1 },
-  smileIntensity: { min: 0, max: 1 },
+  pitch: { min: -180, max: 180, nullable: true },
+  eyeOpenness: { min: 0, max: 1, nullable: true },
+  smileIntensity: { min: 0, max: 1, nullable: true },
+  primaryFaceConfidence: { min: 0, max: 1, nullable: true },
+  secondLargestFaceRatio: { min: 0, max: 1, nullable: true },
 };
 
 /** Fields holding a measurement. */
@@ -193,10 +225,12 @@ export type NumericFeatureField =
   | 'faceCenterOffsetY'
   | 'faceCount'
   | 'yaw'
-  | 'pitch'
   | 'roll'
+  | 'pitch'
   | 'eyeOpenness'
-  | 'smileIntensity';
+  | 'smileIntensity'
+  | 'primaryFaceConfidence'
+  | 'secondLargestFaceRatio';
 
 export const NUMERIC_FEATURE_FIELDS = Object.keys(
   FEATURE_RULES,
@@ -272,6 +306,17 @@ export function assertFeaturesUsable(f: ComputedFeatures): void {
     if (typeof value !== 'string' || value === '') {
       throw new FeatureError(field, value, 'expected a non-empty string');
     }
+  }
+
+  // A face-derived measurement without a face, or a face without its
+  // confidence, means the detector and the vector disagree about whether
+  // a subject was found.
+  if (f.faceCount === 0 && f.primaryFaceConfidence !== null) {
+    throw new FeatureError(
+      'primaryFaceConfidence',
+      f.primaryFaceConfidence,
+      'is set although faceCount is 0',
+    );
   }
 
   // The two sharpness fields have to agree, or the scorer cannot tell

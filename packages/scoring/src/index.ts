@@ -54,8 +54,8 @@ export type { PixelFeatures } from './pixel-axes.js';
 export { FIX_MESSAGES, MAX_FIXES, SEVERITY_THRESHOLDS, severityFor } from './fixes.js';
 export type { Fix, FixSeverity } from './fixes.js';
 
-export { computeConfidence } from './confidence.js';
-export type { ConfidenceInputs } from './confidence.js';
+export { computeConfidence, subjectDisagreement } from './confidence.js';
+export type { ConfidenceContext, ConfidenceInputs } from './confidence.js';
 
 export {
   axisBreakdown,

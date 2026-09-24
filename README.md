@@ -111,6 +111,33 @@ daily, shortly after the pg_cron sweep.
 `deletePhoto` (the user-facing button) does the same two steps in one
 call, object first.
 
+## The face detector model is in Git LFS
+
+`models/det_500m.onnx` is SCRFD-500m (2.4MB, 5 keypoints), stored through
+Git LFS and pinned by SHA-256 in `models/manifest.json`. `postinstall`
+verifies the hash, which is what turns an unresolved LFS pointer into a
+clear message at install rather than an opaque ONNX parse error at
+runtime.
+
+`.gitignore` still excludes `models/` wholesale - the rule exists to keep
+the training corpus out. This one path is allowed back explicitly,
+because a pinned weight file that is required to build is a different
+thing from training images.
+
+```bash
+git lfs install && git lfs pull   # after a fresh clone
+pnpm verify:models
+```
+
+**Vercel does not fetch LFS objects by default.** Enable Git LFS in the
+project's Git settings. `scripts/check-lfs.mjs` runs on install and fails
+the build with instructions if it was missed - that failure otherwise
+only shows up on deploy.
+
+MediaPipe was evaluated first and rejected: `@mediapipe/tasks-vision` is
+a browser bundle whose WASM loader needs a real DOM, and shimming it ends
+at `ModuleFactory not set`. SCRFD runs natively in Node with no shim.
+
 ## HEIC needs a real file to test
 
 `packages/features` handles iPhone HEIC through `heic-convert`, because

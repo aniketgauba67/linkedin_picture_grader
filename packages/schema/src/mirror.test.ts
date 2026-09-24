@@ -49,6 +49,8 @@ const features: ComputedFeatures = {
   eyeOpenness: 0.78,
   smileIntensity: 0.33,
   eyeRegionMeasured: true,
+  primaryFaceConfidence: 0.91,
+  secondLargestFaceRatio: null,
   isGrayscale: false,
   aspectExtreme: false,
   sourceFormat: 'jpeg',

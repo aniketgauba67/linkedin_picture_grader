@@ -44,6 +44,8 @@ const usable: ComputedFeatures = {
   eyeOpenness: 0.82,
   smileIntensity: 0.41,
   eyeRegionMeasured: true,
+  primaryFaceConfidence: 0.91,
+  secondLargestFaceRatio: null,
   isGrayscale: false,
   aspectExtreme: false,
   sourceFormat: 'jpeg',
@@ -189,17 +191,25 @@ describe('ComputedFeatures', () => {
     expect(ComputedFeatures.safeParse({ ...usable, [field]: '1' }).success).toBe(false);
   });
 
-  it('accepts null for sharpnessEyeRegion and nothing else', () => {
-    expect(
-      ComputedFeatures.safeParse({
-        ...usable,
-        sharpnessEyeRegion: null,
-        eyeRegionMeasured: false,
-      }).success,
-    ).toBe(true);
+  it('accepts null only on the fields documented as unmeasurable', () => {
+    // Everything here means "could not be measured", never "measured as
+    // zero". pitch, eyeOpenness and smileIntensity need a mesh model the
+    // 5-point detector does not provide.
+    const nullable = new Set([
+      'sharpnessEyeRegion',
+      'pitch',
+      'eyeOpenness',
+      'smileIntensity',
+      'primaryFaceConfidence',
+      'secondLargestFaceRatio',
+    ]);
     for (const field of NUMERIC_FEATURE_FIELDS) {
-      if (field === 'sharpnessEyeRegion') continue;
-      expect(ComputedFeatures.safeParse({ ...usable, [field]: null }).success).toBe(false);
+      const patch: Record<string, unknown> = { ...usable, [field]: null };
+      if (field === 'sharpnessEyeRegion') patch['eyeRegionMeasured'] = false;
+      expect(
+        ComputedFeatures.safeParse(patch).success,
+        `${field} nullability`,
+      ).toBe(nullable.has(field));
     }
   });
 
@@ -268,6 +278,17 @@ describe('assertFeaturesUsable', () => {
   it('names the field when it is Infinity', () => {
     const corrupt = { ...usable, dynamicRange: Number.POSITIVE_INFINITY };
     expect(() => assertFeaturesUsable(corrupt)).toThrow(/dynamicRange/);
+  });
+
+  it('rejects a face confidence when no face was found', () => {
+    // A face-derived measurement without a face means the detector and
+    // the vector disagree about whether there was a subject at all.
+    expect(() =>
+      assertFeaturesUsable({ ...usable, faceCount: 0, primaryFaceConfidence: 0.9 }),
+    ).toThrow(/primaryFaceConfidence/);
+    expect(() =>
+      assertFeaturesUsable({ ...usable, faceCount: 0, primaryFaceConfidence: null }),
+    ).not.toThrow();
   });
 
   it('names the field when it is out of range', () => {
