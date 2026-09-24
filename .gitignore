@@ -22,7 +22,11 @@ coverage/
 
 # Training data is never committed, and neither is the model corpus.
 data/
-models/
+# `models/*` rather than `models/`: git cannot re-include a file whose
+# PARENT DIRECTORY is excluded, so a bare `models/` would make the
+# negations below silently do nothing - and `git add -A` would skip the
+# model without a word.
+models/*
 # One exception, allowed explicitly rather than by weakening the rule:
 # the face detector weights. A pinned 2.4MB weight file is a different
 # thing from training images - it is required to build, it never grows,

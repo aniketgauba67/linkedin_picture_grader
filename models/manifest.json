@@ -1,0 +1,21 @@
+{
+  "$comment": "Pinned artifacts. scripts/verify-models.mjs checks these on install; a mismatch means the file was swapped, truncated, or is an unresolved Git LFS pointer.",
+  "models": [
+    {
+      "path": "models/det_500m.onnx",
+      "sha256": "5e4447f50245bbd7966bd6c0fa52938c61474a04ec7def48753668a9d8b4ea3a",
+      "bytes": 2524817,
+      "description": "SCRFD-500m face detector, 5 keypoints. From deepinsight/insightface v0.7 buffalo_sc.zip.",
+      "license": "MIT (insightface)",
+      "source": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_sc.zip"
+    },
+    {
+      "path": "packages/features/fixtures/portrait.jpg",
+      "sha256": "f427238ab472653bef8a553e83c98eabcc3fb24015bced6fdaafb669e413be46",
+      "bytes": 46049,
+      "description": "NASA Administrator Bill Nelson official portrait, resized to 600x750. The single committed image, used to prove the detector loads and fires.",
+      "license": "Public domain (work of the US federal government)",
+      "source": "https://commons.wikimedia.org/wiki/File:NASA_Administrator_Bill_Nelson_Official_Portrait_(NHQ202105170001).jpg"
+    }
+  ]
+}
