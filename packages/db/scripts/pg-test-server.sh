@@ -51,10 +51,17 @@ start() {
   fi
 
   "$PGBIN/pg_ctl" -D "$PGDATA" -l "$PGDATA/server.log" -w start
-  "$PGBIN/psql" -h localhost -p "$PORT" -U postgres -d postgres -q \
-    -c "select 1 from pg_database where datname = '$DB_NAME'" -tA | grep -q 1 \
-    || "$PGBIN/psql" -h localhost -p "$PORT" -U postgres -d postgres -q \
-         -c "create database $DB_NAME"
+  # Split the query from the test on purpose. Piping into grep reports
+  # GREP's exit status, so a psql that failed to connect would be
+  # indistinguishable from "the database does not exist" - and we would
+  # silently try to create it against a server that is not answering.
+  local existing
+  existing=$("$PGBIN/psql" -h localhost -p "$PORT" -U postgres -d postgres -tA \
+    -c "select 1 from pg_database where datname = '$DB_NAME'")
+  if [ "$existing" != "1" ]; then
+    "$PGBIN/psql" -h localhost -p "$PORT" -U postgres -d postgres -q \
+      -c "create database $DB_NAME"
+  fi
 
   echo
   echo "Ready. Run the integration tests with:"

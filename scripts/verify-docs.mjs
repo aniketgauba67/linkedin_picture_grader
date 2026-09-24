@@ -75,7 +75,9 @@ const CLAIMS = [
 
   // --- the rule that exists because of all of the above ---
   ['CLAUDE.md', 'edit scripts must fail loudly', 'Edit scripts must fail loudly'],
-  ['CLAUDE.md', 'grep masks the exit status before it', "reports grep's exit status, not the command's"],
+  ['CLAUDE.md', 'grep masks the exit status before it', "reports **grep's** exit status, not `cmd`'s"],
+  ['CLAUDE.md', 'pipefail is set in the workflow', 'defaults: run: shell: bash'],
+  ['.github/workflows/ci.yml', 'workflow sets pipefail', 'shell: bash'],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**

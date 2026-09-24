@@ -98,8 +98,20 @@ Never accept "the command ran" as evidence an edit applied - read the
 file back. `pnpm verify:docs` checks the load-bearing comments and
 documentation are present, and runs in CI.
 
-The same trap applies to verification itself: `cmd | grep ...` reports
-grep's exit status, not the command's. Check exit codes directly.
+The same trap applies to verification itself, and it is the same root
+cause - accepting a proxy for success:
+
+- `cmd | grep ...` reports **grep's** exit status, not `cmd`'s. So does
+  `x=$(cmd | head)`: if `cmd` fails, `x` is empty and an assertion built
+  on it passes. Use `set -o pipefail`, read `PIPESTATUS`, or split the
+  run from the check into separate steps.
+- GitHub Actions' default shell is `bash -e {0}` - errexit, but **not**
+  pipefail. `defaults: run: shell: bash` in the workflow switches it to
+  `bash --noprofile --norc -eo pipefail {0}`, which this repo sets.
+- `grep -c` prints `0` **and** exits 1, so `grep -c x f || echo 0` emits
+  `0\n0` and breaks a numeric test.
+
+Check the exit code of the thing you actually care about.
 
 **Nothing is proven about the native stack until it is invoked.** LFS,
 model hash, CUDA skip and tracing globs are all build-time checks that
