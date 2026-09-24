@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import sharp from 'sharp';
 import type { Assessment } from '@pps/schema';
+import { toRubricResponse } from './rubric.js';
 import {
   JudgeError,
   TRUNCATION_RETRY_MAX_TOKENS,
@@ -8,7 +9,7 @@ import {
   parseReply,
   toJudgeImage,
 } from './judge.js';
-import { MAX_TOKENS, MODEL, OUTPUT_JSON_SCHEMA, buildRequest } from './rubric.js';
+import { AssessmentSchema, MAX_TOKENS, MODEL, OUTPUT_JSON_SCHEMA, buildRequest } from './rubric.js';
 
 /**
  * NO TEST HERE MAY REACH THE NETWORK. CI has no ANTHROPIC_API_KEY and
@@ -29,7 +30,13 @@ const assessment: Assessment = {
   framing_observation: { crop: 'head_and_shoulders', face_roughly_centered: true },
 };
 
-const assessed = JSON.stringify({ status: 'assessed', assessment });
+/** The FLAT wire shape the API actually returns - `oneOf` is rejected. */
+const assessed = JSON.stringify({
+  status: 'assessed',
+  assessment,
+  reason: null,
+  detail: null,
+});
 
 /** A stand-in for the SDK. Every case drives it, nothing drives the network. */
 function mockClient(replies: readonly unknown[]) {
@@ -87,11 +94,39 @@ describe('buildRequest', () => {
     expect(request['max_tokens']).toBe(MAX_TOKENS);
   });
 
+  it('uses only the JSON Schema keywords the API actually accepts', () => {
+    // Each of these was verified by a real 400 from the live API:
+    //   oneOf            "Schema type 'oneOf' is not supported"
+    //   minimum/maximum  "For 'integer' type, properties maximum, minimum
+    //                     are not supported"
+    // and a nullable type carrying an enum was rejected with
+    //   "Enum value 'no_face' does not match declared type
+    //    '['string', 'null']'"
+    // so `reason` is a bare enum with no declared type.
+    const serialized = JSON.stringify(OUTPUT_JSON_SCHEMA);
+    for (const unsupported of ['oneOf', 'anyOf', 'allOf', 'minimum', 'maximum', 'minLength', 'maxLength']) {
+      expect(serialized, `${unsupported} is rejected by the API`).not.toContain(unsupported);
+    }
+  });
+
+  it('keeps content validation in zod, since the schema cannot express it', () => {
+    // The schema constrains shape only; evidence length and score range
+    // are enforced when the reply is parsed.
+    expect(
+      AssessmentSchema.safeParse({
+        ...assessment,
+        background: { evidence: 'busy', score: 2 },
+      }).success,
+    ).toBe(false);
+  });
+
   it('forbids sibling keys at every level of the output schema', () => {
     const walk = (node: unknown): void => {
       if (node === null || typeof node !== 'object') return;
       const record = node as Record<string, unknown>;
-      if (record['type'] === 'object') {
+      const type = record['type'];
+      const isObject = type === 'object' || (Array.isArray(type) && type.includes('object'));
+      if (isObject) {
         expect(record['additionalProperties']).toBe(false);
       }
       for (const value of Object.values(record)) walk(value);
@@ -172,6 +207,7 @@ describe('judgePhoto', () => {
   it('returns apparent_minor without throwing, and without a retry', async () => {
     const declined = JSON.stringify({
       status: 'declined',
+      assessment: null,
       reason: 'apparent_minor',
       detail: 'This service only assesses photographs of adults.',
     });
@@ -183,7 +219,12 @@ describe('judgePhoto', () => {
   });
 
   it.each(['no_face', 'not_a_photo'] as const)('maps a %s decline straight through', async (reason) => {
-    const declined = JSON.stringify({ status: 'declined', reason, detail: 'nothing to assess' });
+    const declined = JSON.stringify({
+      status: 'declined',
+      assessment: null,
+      reason,
+      detail: 'nothing to assess',
+    });
     const { client } = mockClient([reply(declined)]);
     expect(await judgePhoto(photo, { client, sleep: noSleep })).toEqual({ ok: false, reason });
   });
@@ -242,9 +283,34 @@ describe('judgePhoto', () => {
     const thin = JSON.stringify({
       status: 'assessed',
       assessment: { ...assessment, background: { evidence: 'busy', score: 2 } },
+      reason: null,
+      detail: null,
     });
     const { client } = mockClient([reply(thin), reply(thin), reply(thin)]);
     await expect(judgePhoto(photo, { client, sleep: noSleep })).rejects.toBeInstanceOf(JudgeError);
+  });
+});
+
+describe('toRubricResponse', () => {
+  it('rejects a wire reply whose branches contradict its status', () => {
+    // Flattening loses the guarantee the union gave for free, so the
+    // two halves are re-checked rather than assumed.
+    expect(() =>
+      toRubricResponse({ status: 'assessed', assessment: null, reason: null, detail: null }),
+    ).toThrow(/no assessment/);
+    expect(() =>
+      toRubricResponse({ status: 'declined', assessment: null, reason: null, detail: 'x' }),
+    ).toThrow(/no reason/);
+  });
+
+  it('normalises a flat reply back into the discriminated union', () => {
+    const union = toRubricResponse({
+      status: 'declined',
+      assessment: null,
+      reason: 'no_face',
+      detail: 'nothing to assess',
+    });
+    expect(union).toEqual({ status: 'declined', reason: 'no_face', detail: 'nothing to assess' });
   });
 });
 

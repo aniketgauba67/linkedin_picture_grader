@@ -20,11 +20,9 @@
  * prevent. OUTPUT_JSON_SCHEMA is the one thing that must be written out
  * separately, because the API wants JSON Schema and zod is not that.
  */
-import {
-  Assessment,
-  RubricDecline,
-  RubricResponse,
-} from '@pps/schema';
+import { z } from 'zod';
+import { Assessment, RubricDecline, RubricResponse } from '@pps/schema';
+import type { RubricResponse as RubricResponseType } from '@pps/schema';
 
 export {
   Assessment as AssessmentSchema,
@@ -57,14 +55,36 @@ const AXIS_PROPERTY = {
   additionalProperties: false,
   required: ['evidence', 'score'],
   properties: {
-    evidence: { type: 'string', minLength: 10, maxLength: 300 },
-    score: { type: 'integer', minimum: 1, maximum: 5 },
+    // No minLength/maxLength, and an enum rather than minimum/maximum:
+    // the accepted JSON Schema subset is narrow. Verified against the
+    // live API - `minimum`/`maximum` on an integer returns
+    //   400 ... For 'integer' type, properties maximum, minimum are not supported
+    // The schema constrains SHAPE; zod still enforces CONTENT (evidence
+    // 10-300 chars, score 1-5) once the reply is in hand.
+    evidence: { type: 'string' },
+    score: { type: 'integer', enum: [1, 2, 3, 4, 5] },
   },
 } as const;
 
 /**
- * The same shape as RubricResponse, in JSON Schema, for
- * output_config.format.
+ * The same contract as RubricResponse, in the JSON Schema subset
+ * output_config.format actually accepts.
+ *
+ * FLATTENED ON PURPOSE. The natural expression of a tagged union is
+ * `oneOf`, and the API rejects it outright:
+ *
+ *   400 invalid_request_error
+ *   output_config.format.schema: Schema type 'oneOf' is not supported
+ *
+ * So the wire shape is one object carrying both branches, with `status`
+ * selecting which is populated and the other side null. That is a
+ * transport concession, not the domain model - `RubricResponse` in
+ * @pps/schema stays a discriminated union, and `toRubricResponse` below
+ * converts as soon as the reply is in hand.
+ *
+ * The accepted keyword subset is narrow: no oneOf/anyOf, no
+ * minimum/maximum, no minLength/maxLength. Shape is constrained here,
+ * content by zod after the fact.
  *
  * additionalProperties: false at every level on purpose - without it the
  * model is free to invent sibling keys, and a stray "confidence" or
@@ -74,57 +94,76 @@ const AXIS_PROPERTY = {
 export const OUTPUT_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['status'],
-  oneOf: [
-    {
-      type: 'object',
+  required: ['status', 'assessment', 'reason', 'detail'],
+  properties: {
+    status: { type: 'string', enum: ['assessed', 'declined'] },
+    assessment: {
+      type: ['object', 'null'],
       additionalProperties: false,
-      required: ['status', 'assessment'],
+      required: ['background', 'attire', 'expression', 'solo', 'framing_observation'],
       properties: {
-        status: { type: 'string', const: 'assessed' },
-        assessment: {
+        background: AXIS_PROPERTY,
+        attire: AXIS_PROPERTY,
+        expression: AXIS_PROPERTY,
+        solo: AXIS_PROPERTY,
+        framing_observation: {
           type: 'object',
           additionalProperties: false,
-          required: ['background', 'attire', 'expression', 'solo', 'framing_observation'],
+          required: ['crop', 'face_roughly_centered'],
           properties: {
-            background: AXIS_PROPERTY,
-            attire: AXIS_PROPERTY,
-            expression: AXIS_PROPERTY,
-            solo: AXIS_PROPERTY,
-            framing_observation: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['crop', 'face_roughly_centered'],
-              properties: {
-                crop: {
-                  type: 'string',
-                  enum: [
-                    'head_only',
-                    'head_and_shoulders',
-                    'upper_body',
-                    'full_body',
-                    'indeterminate',
-                  ],
-                },
-                face_roughly_centered: { type: 'boolean' },
-              },
+            crop: {
+              type: 'string',
+              enum: [
+                'head_only',
+                'head_and_shoulders',
+                'upper_body',
+                'full_body',
+                'indeterminate',
+              ],
             },
+            face_roughly_centered: { type: 'boolean' },
           },
         },
       },
     },
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['status', 'reason', 'detail'],
-      properties: {
-        status: { type: 'string', const: 'declined' },
-        reason: { type: 'string', enum: ['no_face', 'apparent_minor', 'not_a_photo'] },
-        detail: { type: 'string', maxLength: 200 },
-      },
-    },
-  ],
+    reason: { enum: ['no_face', 'apparent_minor', 'not_a_photo', null] },
+    detail: { type: ['string', 'null'] },
+  },
 } as const;
+
+/**
+ * The flattened wire shape, reusing the canonical pieces rather than
+ * restating them. Only the envelope is new; the axes and the decline
+ * reasons are still defined once, in @pps/schema.
+ */
+export const RubricWireResponse = z.strictObject({
+  status: z.enum(['assessed', 'declined']),
+  assessment: Assessment.nullable(),
+  reason: RubricDecline.nullable(),
+  detail: z.string().max(200).nullable(),
+});
+
+export type RubricWireResponse = z.infer<typeof RubricWireResponse>;
+
+/**
+ * Turns the flat wire reply back into the discriminated union.
+ *
+ * Throws when the two disagree - `status: "assessed"` with no assessment,
+ * or a decline with no reason. The flattening loses the guarantee the
+ * union gave us for free, so it is re-checked here rather than assumed.
+ */
+export function toRubricResponse(wire: RubricWireResponse): RubricResponseType {
+  if (wire.status === 'assessed') {
+    if (wire.assessment === null) {
+      throw new TypeError('Reply claims status "assessed" but carries no assessment');
+    }
+    return { status: 'assessed', assessment: wire.assessment };
+  }
+  if (wire.reason === null) {
+    throw new TypeError('Reply claims status "declined" but carries no reason');
+  }
+  return { status: 'declined', reason: wire.reason, detail: wire.detail ?? '' };
+}
 
 export const SYSTEM_PROMPT = `You assess PHOTOGRAPHS against a fixed rubric for use as professional profile pictures. You are scoring the photograph. You are not scoring the person. Respond directly with the structured result. No preamble.
 

@@ -1,8 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Assessment, DeclineReason, RubricResponse } from '@pps/schema';
-import { RubricResponse as RubricResponseSchema } from '@pps/schema';
 import { asDecodeError } from './errors.js';
-import { MAX_TOKENS, buildRequest } from './rubric.js';
+import { MAX_TOKENS, RubricWireResponse, buildRequest, toRubricResponse } from './rubric.js';
 import { normalizedPipeline, prepareImage } from './normalize.js';
 
 /**
@@ -86,6 +85,9 @@ export async function toJudgeImage(image: Buffer): Promise<string> {
 /**
  * Pulls a RubricResponse out of the reply text.
  *
+ * The reply arrives in the FLAT wire shape (the API rejects `oneOf`),
+ * so it is validated flat and then normalised back into the union.
+ *
  * DEFENSIVE. With output_config.format the API constrains the shape
  * server-side, so fenced or prefaced JSON should be unreachable. The
  * stripping stays as depth, and `onAnomaly` fires when it is actually
@@ -98,14 +100,14 @@ export function parseReply(
 ): RubricResponse {
   const direct = tryParse(text);
   if (direct !== null) {
-    return RubricResponseSchema.parse(direct);
+    return toRubricResponse(RubricWireResponse.parse(direct));
   }
 
   const fenced = text.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
   const fromFence = tryParse(fenced);
   if (fromFence !== null) {
     onAnomaly?.('reply arrived inside a markdown fence despite the json_schema constraint');
-    return RubricResponseSchema.parse(fromFence);
+    return toRubricResponse(RubricWireResponse.parse(fromFence));
   }
 
   const first = fenced.indexOf('{');
@@ -114,7 +116,7 @@ export function parseReply(
     const sliced = tryParse(fenced.slice(first, last + 1));
     if (sliced !== null) {
       onAnomaly?.('reply carried text around the JSON despite the json_schema constraint');
-      return RubricResponseSchema.parse(sliced);
+      return toRubricResponse(RubricWireResponse.parse(sliced));
     }
   }
 

@@ -21,7 +21,8 @@
     "test": "vitest run",
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
-    "clean": "rm -rf dist .turbo"
+    "clean": "rm -rf dist .turbo",
+    "judge:probe": "node scripts/judge-probe.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
