@@ -198,3 +198,50 @@ describe('runCli ceiling', () => {
     expect(result.output).not.toMatch(/\battire\s+\[/);
   });
 });
+
+describe('runCli overlap', () => {
+  const withOverlap = (n: number, f: (s: number) => number) => {
+    const older: unknown[] = [];
+    const newer: unknown[] = [];
+    for (let i = 0; i < n; i += 1) {
+      const score = (i % 5) + 1;
+      older.push({ id: `p${i}`, axes: { framing: score } });
+      newer.push({ id: `p${i}`, axes: { framing: f(score) } });
+    }
+    return { 'old.jsonl': jsonl(older), 'new.jsonl': jsonl(newer) };
+  };
+
+  it('exits 0 when the two passes agree', () => {
+    const result = runCli(['overlap', 'old.jsonl', 'new.jsonl'], files(withOverlap(25, (s) => s)));
+    expect(result.code).toBe(0);
+    expect(result.output).toMatch(/Every axis agrees/);
+  });
+
+  it('exits 2 and refuses the merge when the passes disagree on order', () => {
+    const result = runCli(['overlap', 'old.jsonl', 'new.jsonl'], files(withOverlap(30, (s) => 6 - s)));
+    expect(result.code).toBe(2);
+    expect(result.output).toMatch(/BLOCKED on 1 axis/);
+    expect(result.output).toMatch(/Do not merge these passes/);
+  });
+
+  it('exits 2 when the passes share no images at all', () => {
+    const a = jsonl(Array.from({ length: 30 }, (_, i) => ({ id: `a${i}`, axes: { framing: (i % 5) + 1 } })));
+    const b = jsonl(Array.from({ length: 30 }, (_, i) => ({ id: `b${i}`, axes: { framing: (i % 5) + 1 } })));
+    const result = runCli(['overlap', 'old.jsonl', 'new.jsonl'], files({ 'old.jsonl': a, 'new.jsonl': b }));
+    expect(result.code).toBe(2);
+    expect(result.output).toMatch(/shared images\s+0/);
+  });
+
+  it('exits 1 for a rescalable offset rather than blocking it', () => {
+    const result = runCli(
+      ['overlap', 'old.jsonl', 'new.jsonl'],
+      files(withOverlap(30, (s) => Math.max(1, s - 2))),
+    );
+    expect(result.code).toBe(1);
+    expect(result.output).toMatch(/need rescaling/);
+  });
+
+  it('is listed in the usage, so it cannot be missed', () => {
+    expect(runCli([], files({})).output).toMatch(/overlap.*MUST PASS BEFORE MERGING/);
+  });
+});

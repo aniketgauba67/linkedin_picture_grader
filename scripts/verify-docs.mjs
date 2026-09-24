@@ -138,7 +138,7 @@ const CLAIMS = [
   // --- the three decisions ---
   ['packages/scoring/src/weights/v1.ts', 'lighting is a sanity check, not a quality model', 'clipping-and-exposure sanity check, not a lighting quality model'],
   ['packages/scoring/src/weights/v1.ts', 'and says not to try fitting it again', 'Do not fit this. Do not widen it to chase a correlation'],
-  ['packages/scoring/src/weights/v1.ts', 'the framing map states its validity ceiling', 'VALID TO SCORE 2. ANYTHING ABOVE IS EXTRAPOLATION'],
+  ['packages/scoring/src/weights/v1.ts', 'the framing knots span the full scale again', 'PROVISIONAL, HAND-SET, SPANNING THE FULL 1-5'],
   ['packages/scoring/src/weights.ts', 'the lighting demotion records its reason', 'an axis nobody can validate should not vote like one that has been'],
   ['docs/calibration-notes.md', 'the negative result is recorded', 'REJECTED — mean facial exposure as a lighting quality model'],
   ['docs/calibration-notes.md', 'with the number that rules it out', 'best two-sided band, centre searched 60→180'],
@@ -149,6 +149,13 @@ const CLAIMS = [
   ['docs/calibration-notes.md', 'the two-labeller failure is recorded', 'Do not merge label sets that share no overlap'],
   ['docs/calibration-notes.md', 'with the evidence that rules the merge out', 'At the same measurement the two passes disagree by two whole points'],
   ['training/calibrate.ts', 'the top-up says it was labelled before measuring', 'BEFORE framingRaw was computed'],
+  ['packages/scoring/src/score.ts', 'a decline is a finding, not missing data', 'A DECLINE IS A FINDING, NOT MISSING DATA'],
+  ['packages/scoring/src/score.ts', 'the cap is applied after renormalising, and why', 'renormalising is exactly the step that let a declined photograph'],
+  ['packages/scoring/src/weights/v1.ts', 'the band is derived from observation with its n', 'DERIVED FROM OBSERVATION, n=12'],
+  ['packages/scoring/src/weights/v1.ts', 'the LinkedIn denominator mismatch is recorded', 'DIFFERENT DENOMINATOR'],
+  ['packages/scoring/src/weights/v1.ts', 'the withdrawn framing fit is explained', 'It had disabled the axis in production'],
+  ['packages/eval/src/overlap.ts', 'the overlap rule records the failure it came from', 'The disagreement was only visible between them'],
+  ['docs/calibration-notes.md', 'the no-merge-without-overlap rule is written down', 'RULE — no merge without overlap'],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**

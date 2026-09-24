@@ -181,45 +181,67 @@ export const WEIGHTS_V1: Weights = {
       [800, 5],
     ],
     /**
-     * FITTED. The only fitted map in this file.
+     * PROVISIONAL, HAND-SET, SPANNING THE FULL 1-5. Reverted from a fit.
      *
-     * Over `framingRaw` (1 = ideal, approaching 0 = worst), monotone in
-     * goodness. Pool-adjacent-violators over 125 hand-labelled
-     * photographs; held-out Spearman 0.595, in-sample 0.698, cluster-
-     * held-out by credited photographer.
+     * A fitted map shipped here briefly and was withdrawn. It was valid
+     * only to score 2 - the 125 labels never reached 4 or 5 - and
+     * applyIsotonic clamps above the last knot, so it handed 2 to every
+     * well-framed photograph in existence. Across the 150-image corpus
+     * it produced a 0.31-point range on a 1-5 axis, with 64 images
+     * pinned at exactly 2.00. It had disabled the axis in production.
      *
-     * VALID TO SCORE 2. ANYTHING ABOVE IS EXTRAPOLATION.
+     * A hand-set guess spanning the whole range beats a fitted map
+     * spanning a fifth of it. This is the honest guess.
      *
-     * The fit stops at 2 because the labels do: no photograph in the
-     * set scored 5 on framing and only 12 scored 4, so there is nothing
-     * anchoring the top of the scale. applyIsotonic clamps above the
-     * last knot, so every well-framed photograph currently receives 2.
+     * There IS evidence the scalar works: fitted on 40 stratified
+     * corpus photographs it reaches 5.00 with 0.797 cluster-held-out
+     * (docs/calibration-notes.md). That map is not shipped, because the
+     * same person labelled and fitted it - 0.797 measures a labeller's
+     * self-consistency, not the model's accuracy.
      *
-     * This was written past the calibrator's stop rule deliberately,
-     * with `--override-stop`, and the recorded reason was:
+     * TODO: refit once a properly anchored corpus exists - two raters,
+     * a shared overlap, and an alpha computed on it before any merge.
+     * `pnpm --filter @pps/eval exec pps-eval overlap` enforces that.
      *
-     *   "Framing held-out Spearman 0.595 (in-sample 0.698) on a
-     *   monotone unsaturating scalar. The map tops out at 2 only
-     *   because no image was labelled 5 and just 12 were labelled 4 - a
-     *   label-coverage ceiling the Pexels corpus genuinely fixes,
-     *   unlike lighting's measurement ceiling. A real fit over the
-     *   range the data supports beats a hand-set guess across the whole
-     *   range. VALID TO SCORE 2; anything above is extrapolation.
-     *   Refit when labelled well-framed examples exist."
-     *
-     * TODO: refit once the Pexels corpus supplies labelled well-framed
-     * examples. That corpus is full of them and none are labelled yet,
-     * which makes this the cheapest open item in the calibration.
+     * Over `framingRaw` (1 = ideal, approaching 0 = worst). The knots
+     * were re-spaced for the observation-derived ideal band above; the
+     * band change moves framingRaw for every photograph, so the old
+     * spacing no longer means what it did.
      */
     framing: [
-      [0.37495916728272416, 1],
-      [0.48170673451176993, 2],
+      [0.2, 1],
+      [0.4, 2],
+      [0.6, 3],
+      [0.78, 4],
+      [0.92, 5],
     ],
   },
 
   framing: {
-    idealRatioMin: 0.25,
-    idealRatioMax: 0.35,
+    /**
+     * DERIVED FROM OBSERVATION, n=12. Not fitted, not guessed.
+     *
+     * The interquartile range of `faceAreaRatio` over the twelve corpus
+     * photographs labelled 5 for framing by eye, before the measurement
+     * was consulted. Median 0.150, full range 0.093-0.306.
+     *
+     * It replaces a hand-set 0.25-0.35, which was wrong in a way that
+     * disabled half the axis: only 1 of those 40 labelled photographs
+     * sat above 0.25 at all, so the "face too large" side of the
+     * two-sided penalty never fired, while genuinely well-framed
+     * portraits were charged for being too small.
+     *
+     * The old number probably came from LinkedIn's ~60% facial coverage
+     * guidance, which is a DIFFERENT DENOMINATOR: that figure is
+     * measured after their circular crop on a square image, and this
+     * one is the SCRFD box over the full rectangular frame. A portrait
+     * that fills 60% of a circular avatar covers far less of the
+     * uncropped photograph it was cut from. Do not reconcile the two
+     * numbers by adjusting this one to match; they measure different
+     * things.
+     */
+    idealRatioMin: 0.1298,
+    idealRatioMax: 0.2396,
     offsetTolerance: 0.15,
     // A face at 0.12 - less than half the ideal floor - loses ~0.65.
     ratioPenaltyScale: 5,

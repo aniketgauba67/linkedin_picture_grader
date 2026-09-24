@@ -3,7 +3,16 @@ import type { ValidatedPixelFeatures } from './pixel-axes.js';
 import type { JudgedScores } from './compute.js';
 import { bandPenalty, framingRaw, lightingRaw, resolutionScore } from './compute.js';
 import { WEIGHTS_V1 } from './weights/v1.js';
-import { WeightsVersionError, composeScore, meanToComposite, score } from './score.js';
+import {
+  DECLINE_SCORE_CAP,
+  DETECTOR_JUDGE_CONFLICT_CONFIDENCE,
+  WeightsVersionError,
+  composeScore,
+  detectorJudgeConflict,
+  meanToComposite,
+  score,
+  type DeclineReason,
+} from './score.js';
 import { CONTEXTS, DEFAULT_CONTEXT, weightsFor } from './weights.js';
 import { AXES, COMPUTED_AXES } from './axes.js';
 
@@ -23,7 +32,7 @@ const GOOD = {
   faceRegionMeasured: true,
   clippedHighlights: 0.001,
   clippedShadows: 0.001,
-  faceAreaRatio: 0.3,
+  faceAreaRatio: 0.18,
   faceCenterOffsetX: 0.01,
   faceCenterOffsetY: -0.02,
   faceCount: 1,
@@ -141,16 +150,33 @@ describe('the degraded path', () => {
     expect(expected).toBeGreaterThan(meanToComposite(weighted));
   });
 
-  it('caps a perfectly framed photograph at framing 2, which is the fitted ceiling', () => {
-    // Not a bug. The framing map was fitted on labels that never
-    // reached 4 or 5, so it is valid to 2 and extrapolates above -
-    // recorded in weights/v1.ts and docs/calibration-notes.md. This
-    // test exists so that the day it is refitted, the change in
-    // product behaviour is visible rather than silent.
-    const ideal = { ...GOOD, faceAreaRatio: 0.3, faceCenterOffsetX: 0, faceCenterOffsetY: 0 };
+  it('gives a perfectly framed photograph the top framing score', () => {
+    // The fitted map that capped this at 2 was reverted: it spanned a
+    // fifth of the scale and had disabled the axis in production. This
+    // test is the guard against shipping another one - a map that
+    // cannot reach 5 for a flawlessly framed photograph is not a map.
+    const ideal = { ...GOOD, faceAreaRatio: 0.18, faceCenterOffsetX: 0, faceCenterOffsetY: 0 };
     expect(framingRaw(ideal as ValidatedPixelFeatures, WEIGHTS_V1)).toBe(1);
-    const partial = score({ features: ideal as ValidatedPixelFeatures });
-    expect(partial.axes['framing']).toBe(2);
+    expect(score({ features: ideal as ValidatedPixelFeatures }).axes['framing']).toBe(5);
+  });
+
+  it('spans the full framing range across plausible photographs', () => {
+    // The reverted map produced a 0.31-point range over 150 real
+    // photographs, with 64 pinned at exactly 2.00.
+    const at = (ratio: number, offset = 0): number => {
+      const f = { ...GOOD, faceAreaRatio: ratio, faceCenterOffsetX: offset, faceCenterOffsetY: 0 };
+      return score({ features: f as ValidatedPixelFeatures }).axes['framing'] ?? 0;
+    };
+    const spread = [at(0.18), at(0.1), at(0.05), at(0.02), at(0.18, 0.5)];
+    expect(Math.max(...spread)).toBe(5);
+    expect(Math.max(...spread) - Math.min(...spread)).toBeGreaterThanOrEqual(2);
+
+    // Worth knowing: ratioPenaltyScale is still 5, set when the ideal
+    // band was the much wider 0.25-0.35. Against the narrower
+    // observation-derived band a face covering 2% of the frame - a
+    // distant full-body shot - still scores 3. The scale is a hand-set
+    // product constant and has not been re-derived.
+    expect(at(0.02)).toBeLessThanOrEqual(3);
   });
 
   it('keeps confidence a number and puts the label in coverage', () => {
@@ -180,8 +206,8 @@ describe('two-sided axes', () => {
   it('penalises a face that is too large, not only one that is too small', () => {
     // The bug an isotonic map cannot express: framing is NOT monotone in
     // faceAreaRatio, so the map runs over framingRaw instead.
-    const ideal = framingRaw({ ...GOOD, faceAreaRatio: 0.3 }, WEIGHTS_V1);
-    const tooSmall = framingRaw({ ...GOOD, faceAreaRatio: 0.08 }, WEIGHTS_V1);
+    const ideal = framingRaw({ ...GOOD, faceAreaRatio: 0.18 }, WEIGHTS_V1);
+    const tooSmall = framingRaw({ ...GOOD, faceAreaRatio: 0.03 }, WEIGHTS_V1);
     const tooLarge = framingRaw({ ...GOOD, faceAreaRatio: 0.75 }, WEIGHTS_V1);
 
     expect(ideal).toBeGreaterThan(tooSmall);
@@ -190,7 +216,8 @@ describe('two-sided axes', () => {
 
   it('charges nothing inside the ideal band', () => {
     const { idealRatioMin, idealRatioMax } = WEIGHTS_V1.framing;
-    for (const ratio of [idealRatioMin, 0.3, idealRatioMax]) {
+    const middle = (idealRatioMin + idealRatioMax) / 2;
+    for (const ratio of [idealRatioMin, middle, idealRatioMax]) {
       expect(framingRaw({ ...GOOD, faceAreaRatio: ratio, faceCenterOffsetX: 0, faceCenterOffsetY: 0 }, WEIGHTS_V1)).toBe(1);
     }
   });
@@ -254,7 +281,7 @@ describe('framingRaw saturation', () => {
   // for every photograph past a point, and 53 of 125 calibration images
   // landed there carrying human labels from 1 to 4.
   const off = (x: number): ValidatedPixelFeatures =>
-    ({ ...GOOD, faceAreaRatio: 0.3, faceCenterOffsetX: x, faceCenterOffsetY: 0 }) as ValidatedPixelFeatures;
+    ({ ...GOOD, faceAreaRatio: 0.18, faceCenterOffsetX: x, faceCenterOffsetY: 0 }) as ValidatedPixelFeatures;
 
   it('keeps badly cropped and catastrophically cropped apart', () => {
     const bad = framingRaw(off(0.6), WEIGHTS_V1);
@@ -341,5 +368,88 @@ describe('resolution from the shorter edge', () => {
     expect(resolutionScore(at(4000, 400), WEIGHTS_V1)).toBeLessThan(
       resolutionScore(at(900, 900), WEIGHTS_V1),
     );
+  });
+});
+
+describe('a decline is a finding, not missing data', () => {
+  const REASONS: DeclineReason[] = [
+    'no_face',
+    'apparent_minor',
+    'not_a_photo',
+    'model_refusal',
+    'corrupt_file',
+  ];
+
+  it.each(REASONS)('caps the composite when the judge declines %s', (reason) => {
+    // GOOD is a photograph with nothing wrong with it: every computed
+    // axis scores well, so without a cap the renormalised composite
+    // comes out high. That is the bug - a group of five scored 7.6.
+    const declined = score({ features: GOOD, declined: reason });
+    expect(declined.score).toBeLessThanOrEqual(DECLINE_SCORE_CAP[reason]);
+  });
+
+  it('is impossible by construction, not by luck, for a declined photo to score well', () => {
+    for (const reason of REASONS) {
+      const best = score({ features: GOOD, declined: reason });
+      // Nothing declined may reach the band a good photograph occupies.
+      expect(best.score, reason).toBeLessThan(7);
+    }
+  });
+
+  it('reproduces the group-of-five case: no_face over a detected face', () => {
+    // The judge said no_face; SCRFD had found five. Previously this
+    // produced 7.6 because coverage dropped to partial and `solo` -
+    // the axis that exists to catch group shots - never ran.
+    const group = { ...GOOD, faceCount: 5 } as ValidatedPixelFeatures;
+    const before = score({ features: group });
+    const after = score({ features: group, declined: 'no_face' });
+
+    expect(before.score).toBeGreaterThan(7);
+    expect(after.score).toBeLessThanOrEqual(DECLINE_SCORE_CAP.no_face);
+  });
+
+  it('treats detector-vs-judge disagreement as a confidence problem too', () => {
+    const group = { ...GOOD, faceCount: 5 } as ValidatedPixelFeatures;
+    expect(detectorJudgeConflict(group, 'no_face')).toBe(true);
+    // No conflict when the two agree there is no face.
+    expect(detectorJudgeConflict({ ...GOOD, faceCount: 0 } as ValidatedPixelFeatures, 'no_face')).toBe(
+      false,
+    );
+    // Or when the decline is about something else entirely.
+    expect(detectorJudgeConflict(group, 'not_a_photo')).toBe(false);
+
+    const conflicted = score({ features: group, declined: 'no_face', confidence: 1 });
+    expect(conflicted.confidence).toBeCloseTo(DETECTOR_JUDGE_CONFLICT_CONFIDENCE, 10);
+  });
+
+  it('floors framing when the judge says there is no face', () => {
+    expect(score({ features: GOOD, declined: 'no_face' }).axes['framing']).toBe(1);
+  });
+
+  it('leaves an undeclined score alone, so the cap cannot leak', () => {
+    const normal = score({ features: GOOD, judged: judgedGood });
+    expect(normal.score).toBeGreaterThan(7);
+    expect(normal.coverage).toBe('full');
+  });
+
+  it('does not cap a run that simply never called the judge', () => {
+    // Absent judgement with no decline is genuinely missing data, and
+    // the degraded path is the honest answer to it.
+    const partial = score({ features: GOOD });
+    expect(partial.coverage).toBe('partial');
+    expect(partial.score).toBeGreaterThan(DECLINE_SCORE_CAP.no_face);
+  });
+
+  it('caps model_refusal at the midpoint, not at the floor', () => {
+    // A refusal is about the model, not the photograph. Scoring it as
+    // though the photo were bad would punish the user for our outage.
+    expect(DECLINE_SCORE_CAP.model_refusal).toBeGreaterThan(DECLINE_SCORE_CAP.no_face);
+    expect(DECLINE_SCORE_CAP.model_refusal).toBeLessThan(7);
+  });
+
+  it('has a cap for every reason the schema declares', () => {
+    // Mirror check: @pps/scoring cannot import @pps/schema, so the two
+    // lists are kept in step by this test and nothing else.
+    expect(Object.keys(DECLINE_SCORE_CAP).sort()).toEqual([...REASONS].sort());
   });
 });

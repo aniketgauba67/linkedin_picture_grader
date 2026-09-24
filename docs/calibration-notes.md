@@ -77,7 +77,7 @@ without new measurement. Nothing reads it at scoring time.
 
 ---
 
-## SHIPPED — framing
+## REVERTED then HAND-SET — framing
 
 Held-out Spearman **0.595** (in-sample 0.698), over `framingRaw`.
 
@@ -227,3 +227,84 @@ to 4 at 0.19-0.21, and a wider 0.10-0.25 raises held-out Spearman to
 0.705. Neither reaches 5, because the label-scale disagreement above
 dominates. The band is a hand-set product constant and has not been
 changed.
+
+---
+
+## Framing, resolved: hand-set knots, observation-derived band
+
+The fitted map was **withdrawn**. It was valid only to score 2, and
+`applyIsotonic` clamps above its last knot, so it handed 2 to every
+well-framed photograph in existence. Measured across the 150-image
+corpus it produced a **0.31-point range on a 1-5 axis** with 64 images
+pinned at exactly 2.00. It had disabled the axis in production, which is
+a worse failure than a hand-set guess.
+
+The shipped knots are hand-set and span the full 1-5.
+
+### The evidence that the scalar works
+
+Kept because it is real information, and it is what justifies refitting
+later on a properly anchored corpus:
+
+| fit | top knot | in-sample | cluster-held-out |
+| --- | --- | --- | --- |
+| 40 stratified corpus images | **5.00** | 0.815 | **0.797** |
+
+Stratified 12/12/8/8 across scores 5/4/3/2, labelled by eye from
+numbered contact sheets before `framingRaw` was computed for any of
+them. The scalar is fine. **That map is not shipped**, because the same
+party labelled and fitted it — 0.797 measures a labeller's
+self-consistency, not the model's accuracy.
+
+### The ideal face-area band, corrected
+
+`idealRatioMin/Max` was a hand-set 0.25-0.35 and it was wrong. It is now
+**0.1298-0.2396**, the interquartile range of `faceAreaRatio` over the
+twelve corpus photographs labelled 5 (median 0.150, full range
+0.093-0.306). Derived from observation, n=12, and a product constant
+rather than a fitted map — which is why using labelled data to place it
+is legitimate.
+
+The old number was wrong in a way that disabled half the axis: only 1 of
+those 40 photographs sat above 0.25 at all, so the "face too large" side
+of the two-sided penalty never fired while genuinely well-framed
+portraits were charged for being too small.
+
+It most likely came from LinkedIn's ~60% facial-coverage guidance, which
+is **a different denominator**: that figure is measured after their
+circular crop on a square image; ours is the SCRFD box over the full
+rectangular frame. A face filling 60% of a circular avatar covers far
+less of the photograph it was cut from. Do not reconcile the two numbers
+by adjusting ours.
+
+After the change, `framingScore` across the corpus spans the full
+**1.00-5.00** with a median of 3.23 — a range of 4.00 against the
+previous 0.31.
+
+**Still outstanding:** `ratioPenaltyScale` is 5, set when the band was
+the much wider 0.25-0.35. Against the narrower band a face covering 2%
+of the frame still scores 3. Not re-derived; a test records it.
+
+---
+
+## RULE — no merge without overlap
+
+Enforced, not advised: `pnpm --filter @pps/eval exec pps-eval overlap
+<old.jsonl> <new.jsonl>`.
+
+- every labelling pass re-labels **at least 20 images** from the
+  previous pass
+- Krippendorff's alpha is computed on that overlap **before any fitting**
+- **alpha below 0.65 exits 2 and blocks the merge**, the same discipline
+  as the calibrator's stop rule
+- both raters calibrate against fixed anchor images first — `checkAnchors`
+
+A consistent offset with agreeing rank order is reported as `rescale`
+rather than `block`, because a shifted scale is recoverable and throwing
+the labels away would be the more expensive mistake. Disagreement about
+the *order* blocks outright: there is nothing to rescale.
+
+This exists because two framing passes were merged without it. Each was
+internally consistent, they shared no images, alpha could not be
+computed at all, and the merged fit was worse than either. The rule
+costs twenty images per pass.

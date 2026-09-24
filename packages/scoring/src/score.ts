@@ -95,6 +95,56 @@ export function composeScore(
   return roundTo(meanToComposite(total / weightSum), 1);
 }
 
+/**
+ * Mirror of @pps/schema's DeclineReason. Structural, not imported: this
+ * package has no dependencies. A test asserts the two lists match.
+ */
+export type DeclineReason =
+  | 'no_face'
+  | 'apparent_minor'
+  | 'not_a_photo'
+  | 'model_refusal'
+  | 'corrupt_file';
+
+/**
+ * The most a photograph can score once the judge has declined for a
+ * given reason.
+ *
+ * A DECLINE IS A FINDING, NOT MISSING DATA. That distinction is the
+ * whole point of this table. Without it a decline merely removed the
+ * four judged axes, the composite renormalised over the four computed
+ * ones, and a photograph of five people at a party scored 7.6 out of 10
+ * because it happened to be sharp, well lit and high resolution - which
+ * it was. The axis that exists to catch exactly that photograph, `solo`,
+ * is judged rather than computed, so declining is precisely what stops
+ * it from firing.
+ *
+ * `model_refusal` is the one reason that carries no information about
+ * the photograph - the model declined to answer, which says nothing
+ * about the image - so it caps at the neutral midpoint rather than low.
+ */
+export const DECLINE_SCORE_CAP: Readonly<Record<DeclineReason, number>> = {
+  // Nothing to be a profile photograph of.
+  no_face: 2,
+  // Not scoreable, and not a judgement about the photograph's quality.
+  apparent_minor: 1,
+  // A screenshot or an illustration is not a profile photograph at all.
+  not_a_photo: 2,
+  // The model would not answer. That is about the model, not the photo.
+  model_refusal: 5.5,
+  corrupt_file: 1,
+};
+
+/**
+ * Confidence multiplier applied when the detector and the judge
+ * disagree about whether there is a face.
+ *
+ * They are independent observers of the same question, so a conflict is
+ * information in its own right - the same reasoning that already lowers
+ * confidence when `faceCount` and the `solo` score disagree.
+ */
+export const DETECTOR_JUDGE_CONFLICT_CONFIDENCE = 0.4;
+
 export interface ScoreInput {
   readonly features: ValidatedPixelFeatures;
   /**
@@ -103,10 +153,27 @@ export interface ScoreInput {
    * beats no score.
    */
   readonly judged?: JudgedScores | undefined;
+  /**
+   * Why the judge declined, when it did.
+   *
+   * Pass this whenever `judged` is absent BECAUSE of a decline rather
+   * than because the model was never called. Omitting it is not a
+   * silent downgrade to a lower score - it is a silent upgrade to a
+   * higher one, because the cap never applies.
+   */
+  readonly declined?: DeclineReason | undefined;
   readonly context?: Context;
   readonly weights?: Weights;
   readonly confidence?: number;
   readonly maxFixes?: number;
+}
+
+/** True when the judge saw no face and the detector found one anyway. */
+export function detectorJudgeConflict(
+  features: ValidatedPixelFeatures,
+  declined: DeclineReason | undefined,
+): boolean {
+  return declined === 'no_face' && features.faceCount > 0;
 }
 
 /**
@@ -134,7 +201,12 @@ export function score(input: ScoreInput): ScoreResultShape {
   }
 
   const judged = input.judged;
+  const declined = input.declined;
   const coverage: Coverage = judged === undefined ? 'partial' : 'full';
+
+  // A conflict between two independent observers of the same question
+  // is information, and the run that produced it deserves less trust.
+  const conflict = detectorJudgeConflict(input.features, declined);
 
   const axes: Record<AxisName, number> | Partial<Record<AxisName, number>> =
     judged === undefined
@@ -148,12 +220,27 @@ export function score(input: ScoreInput): ScoreResultShape {
     rounded[axis] = Math.min(AXIS_MAX, Math.max(AXIS_MIN, Math.round(value)));
   }
 
+  // A decline that says something about the PHOTOGRAPH floors the axis
+  // it is about, so the fix list names the real problem rather than
+  // whichever computed axis happened to score lowest.
+  if (declined === 'no_face' && rounded.framing !== undefined) {
+    rounded.framing = AXIS_MIN;
+  }
+
+  const composed = composeScore(rounded, context);
+  const cap = declined === undefined ? COMPOSITE_MAX : DECLINE_SCORE_CAP[declined];
+
   return {
-    score: composeScore(rounded, context),
+    // The cap is applied to the COMPOSITE, after renormalising, because
+    // renormalising is exactly the step that let a declined photograph
+    // score well: it divides by the weight actually used, so removing
+    // four axes raises the remaining four rather than lowering the
+    // total. Capping the axes instead would leave that intact.
+    score: Math.min(composed, cap),
     axes: rounded,
     context,
     fixes: buildFixes(rounded, input.features, context, input.maxFixes),
-    confidence,
+    confidence: conflict ? confidence * DETECTOR_JUDGE_CONFLICT_CONFIDENCE : confidence,
     weightsVersion: weights.version,
     coverage,
   };

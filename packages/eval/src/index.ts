@@ -84,4 +84,16 @@ export {
   type ParsedLabels,
 } from './labels.js';
 
+export {
+  checkAnchors,
+  comparePasses,
+  renderOverlap,
+  MIN_MERGE_ALPHA,
+  MIN_OVERLAP,
+  type AnchorCheck,
+  type LabelPass,
+  type MergeVerdict,
+  type OverlapReport,
+} from './overlap.js';
+
 export { runCli, type CliResult, type ReadTextFile } from './cli.js';

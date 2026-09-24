@@ -26,6 +26,7 @@ import {
 } from './metrics.js';
 import { alignById, parseLabelsJsonl, ratingsByUnit, type LabelRecord } from './labels.js';
 import { reportCeiling, renderCeiling } from './ceiling.js';
+import { comparePasses, renderOverlap, type LabelPass } from './overlap.js';
 import {
   axisDistribution,
   compositeHistogram,
@@ -49,6 +50,7 @@ const USAGE = [
   '  pps-eval report    <labels.jsonl>            distributions, histogram, variance',
   '  pps-eval agreement <a.jsonl> <b.jsonl>       alpha, correlation, confusion',
   '  pps-eval ceiling   <human.jsonl> <model.jsonl>   how much honest headroom is left',
+  '  pps-eval overlap   <old.jsonl> <new.jsonl>   MUST PASS BEFORE MERGING TWO PASSES',
   '',
   'jsonl record: {"id":"p1","clusterId":"person-3","rater":"ana",',
   '               "axes":{"background":4,"attire":3},"composite":7,"phash":"a1b2..."}',
@@ -361,6 +363,70 @@ function commandCeiling(humanPath: string, modelPath: string, read: ReadTextFile
   return { code: 0, output: out.join('\n') };
 }
 
+/**
+ * The gate on merging two labelling passes.
+ *
+ * Exits 2 on a BLOCK, the same discipline as calibrate.ts's stop rule,
+ * because a merge that should not happen is not a warning - it produces
+ * a fit that looks fine and is not.
+ */
+function commandOverlap(oldPath: string, newPath: string, read: ReadTextFile): CliResult {
+  const out: string[] = [];
+  const older = load(oldPath, read, out);
+  const newer = load(newPath, read, out);
+  if (older === null || newer === null) return { code: 2, output: out.join('\n') };
+  out.push(...older.notes, ...newer.notes);
+
+  const axes = [
+    ...new Set([
+      ...older.records.flatMap((r) => Object.keys(r.axes)),
+      ...newer.records.flatMap((r) => Object.keys(r.axes)),
+    ]),
+  ].sort();
+
+  if (axes.length === 0) {
+    out.push('', 'neither file rates any axis - nothing to compare');
+    return { code: 1, output: out.join('\n') };
+  }
+
+  const passFor = (records: readonly LabelRecord[], name: string, axis: string): LabelPass => {
+    const labels = new Map<string, number>();
+    for (const record of records) {
+      const value = record.axes[axis];
+      if (value !== undefined) labels.set(record.id, value);
+    }
+    return { name, labels };
+  };
+
+  let blocked = 0;
+  let rescale = 0;
+  for (const axis of axes) {
+    const report = comparePasses(
+      axis,
+      passFor(older.records, oldPath, axis),
+      passFor(newer.records, newPath, axis),
+    );
+    out.push(renderOverlap(report));
+    if (report.verdict === 'block') blocked += 1;
+    if (report.verdict === 'rescale') rescale += 1;
+  }
+
+  out.push('');
+  if (blocked > 0) {
+    out.push(
+      `BLOCKED on ${blocked} axis/axes. Do not merge these passes.`,
+      'Re-label a shared subset, or agree anchor scores first and label again.',
+    );
+    return { code: 2, output: out.join('\n') };
+  }
+  if (rescale > 0) {
+    out.push(`${rescale} axis/axes need rescaling before the merge. The order agrees; the height does not.`);
+    return { code: 1, output: out.join('\n') };
+  }
+  out.push('Every axis agrees. Merging is safe.');
+  return { code: 0, output: out.join('\n') };
+}
+
 export function runCli(argv: readonly string[], read: ReadTextFile = defaultRead): CliResult {
   const [command, ...rest] = argv;
   switch (command) {
@@ -375,6 +441,10 @@ export function runCli(argv: readonly string[], read: ReadTextFile = defaultRead
     case 'ceiling':
       return rest.length === 2 && rest[0] !== undefined && rest[1] !== undefined
         ? commandCeiling(rest[0], rest[1], read)
+        : { code: 2, output: USAGE };
+    case 'overlap':
+      return rest.length === 2 && rest[0] !== undefined && rest[1] !== undefined
+        ? commandOverlap(rest[0], rest[1], read)
         : { code: 2, output: USAGE };
     default:
       return { code: command === undefined || command === '--help' || command === '-h' ? 0 : 2, output: USAGE };

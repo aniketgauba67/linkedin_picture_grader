@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PixelFeatures } from './pixel-axes.js';
 import { AXES } from './axes.js';
 import { MAX_FIXES, buildFixes } from './fixes.js';
+import { WEIGHTS_V1 } from './weights/v1.js';
 
 const FEATURES: PixelFeatures = {
   width: 1600,
@@ -46,7 +47,12 @@ describe('buildFixes', () => {
     // "Framing is poor" is a diagnosis. This is advice.
     const [fix] = buildFixes({ ...axesAt(5), framing: 2 }, FEATURES, 'corporate');
     expect(fix?.message).toContain('12%');
-    expect(fix?.message).toContain('25%-35%');
+    // Derived, not hardcoded: the ideal band is a product constant that
+    // has already moved once, and a literal here goes stale silently
+    // while the advice itself stays correct.
+    const { idealRatioMin, idealRatioMax } = WEIGHTS_V1.framing;
+    const band = `${Math.round(idealRatioMin * 100)}%-${Math.round(idealRatioMax * 100)}%`;
+    expect(fix?.message).toContain(band);
     expect(fix?.message).toMatch(/^Recrop/);
   });
 
