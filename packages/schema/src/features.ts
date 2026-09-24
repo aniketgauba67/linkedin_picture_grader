@@ -5,17 +5,29 @@ import { z } from 'zod';
  * column next to the cached vector, not as a field of the vector, so an
  * older row is detected and re-extracted rather than silently mis-scored.
  */
-export const FEATURE_VECTOR_VERSION = 2;
+export const FEATURE_VECTOR_VERSION = 3;
+
+/**
+ * The cache key for an extraction, derived from the version rather than
+ * maintained alongside it. `features.extractor_version` and the
+ * `feature_cache` primary key both use this, so a version bump
+ * invalidates every cached vector automatically - there is no second
+ * constant to forget.
+ */
+export const EXTRACTOR_VERSION = `v${FEATURE_VECTOR_VERSION}`;
 
 /**
  * Everything measured from the image itself: sharp for the pixel
  * statistics, MediaPipe for the face landmarks and pose.
  *
- * Every field is `z.number().finite()`. This is not pedantry. A NaN that
- * reaches the scorer does not throw - it propagates through the weighted
- * sum and comes out as a plausible-looking number, which is the worst
- * failure this system can have. `.finite()` rejects NaN and both
+ * Every measurement is `z.number().finite()`. This is not pedantry. A NaN
+ * that reaches the scorer does not throw - it propagates through the
+ * weighted sum and comes out as a plausible-looking number, which is the
+ * worst failure this system can have. `.finite()` rejects NaN and both
  * infinities at the boundary instead.
+ *
+ * The non-numeric fields at the bottom describe the upload rather than
+ * measure it, and are validated by kind in `assertFeaturesUsable`.
  */
 export const ComputedFeatures = z.object({
   // --- sharpness -----------------------------------------------------
@@ -24,9 +36,22 @@ export const ComputedFeatures = z.object({
   /**
    * The same measure restricted to the eye region. A headshot can have a
    * crisp sweater and soft eyes; this is the one that matters.
-   * 0 when no face was located.
+   *
+   * `null` means UNMEASURABLE - no face was located, the eye box fell
+   * outside the frame, or the crop was too small to convolve. It is not a
+   * synonym for zero: a black or perfectly flat eye region genuinely has
+   * zero Laplacian variance, and that photo should score sharpness 1.
+   * Collapsing the two lets the full-frame fallback rescue exactly the
+   * photo the eye-region measure exists to catch.
    */
-  sharpnessEyeRegion: z.number().finite().nonnegative(),
+  sharpnessEyeRegion: z.number().finite().nonnegative().nullable(),
+  /**
+   * Which basis `sharpnessEyeRegion` represents. Explicit rather than
+   * inferred, because the scorer picks a different calibration map for
+   * each and a sentinel cannot distinguish "unmeasurable" from "measured
+   * as zero".
+   */
+  eyeRegionMeasured: z.boolean(),
   /**
    * 0-100 estimate of JPEG quality, from 8x8 block-boundary energy. Heavy
    * compression fakes edge energy, so a low value here means the
@@ -70,6 +95,27 @@ export const ComputedFeatures = z.object({
   eyeOpenness: z.number().finite().min(0).max(1),
   /** 0 neutral, 1 broad. Not a judgement, just a landmark measurement. */
   smileIntensity: z.number().finite().min(0).max(1),
+
+  // --- provenance and shape ------------------------------------------
+  /**
+   * The image carries no usable colour. Set from the original, before the
+   * greyscale conversion extraction does for its own measurements, so it
+   * describes the upload rather than the pipeline. The background and
+   * lighting axes use it to skip colour variance.
+   */
+  isGrayscale: z.boolean(),
+  /**
+   * Longer edge more than 3x the shorter. Panoramas distort
+   * faceAreaRatio badly, and this surfaces that as a framing problem
+   * rather than letting it be mis-scored silently.
+   */
+  aspectExtreme: z.boolean(),
+  /**
+   * Container the bytes arrived in, captured BEFORE normalisation. An
+   * iPhone upload reports "heic" even though extraction measured the
+   * JPEG that heic-convert produced from it.
+   */
+  sourceFormat: z.string().min(1).max(32),
 });
 
 export type ComputedFeatures = z.infer<typeof ComputedFeatures>;
@@ -101,16 +147,18 @@ interface FieldRule {
   readonly min: number;
   readonly max: number;
   readonly int?: boolean;
+  /** Null means "unmeasurable" and is permitted for this field only. */
+  readonly nullable?: boolean;
 }
 
 /**
  * The same bounds the schema declares, in a form that can be walked at
- * runtime. Kept beside the schema so the two are edited together; the test
- * suite asserts every schema key has a rule here.
+ * runtime. Kept beside the schema so the two are edited together; the
+ * test suite asserts every numeric schema key has a rule here.
  */
-export const FEATURE_RULES: Readonly<Record<ComputedFeatureField, FieldRule>> = {
+export const FEATURE_RULES: Readonly<Record<NumericFeatureField, FieldRule>> = {
   sharpnessLaplacian: { min: 0, max: Number.MAX_SAFE_INTEGER },
-  sharpnessEyeRegion: { min: 0, max: Number.MAX_SAFE_INTEGER },
+  sharpnessEyeRegion: { min: 0, max: Number.MAX_SAFE_INTEGER, nullable: true },
   jpegQualityEstimate: { min: 0, max: 100 },
   exposureMean: { min: 0, max: 255 },
   clippedHighlights: { min: 0, max: 1 },
@@ -129,7 +177,45 @@ export const FEATURE_RULES: Readonly<Record<ComputedFeatureField, FieldRule>> = 
   smileIntensity: { min: 0, max: 1 },
 };
 
-export const FEATURE_FIELDS = Object.keys(FEATURE_RULES) as readonly ComputedFeatureField[];
+/** Fields holding a measurement. */
+export type NumericFeatureField =
+  | 'sharpnessLaplacian'
+  | 'sharpnessEyeRegion'
+  | 'jpegQualityEstimate'
+  | 'exposureMean'
+  | 'clippedHighlights'
+  | 'clippedShadows'
+  | 'dynamicRange'
+  | 'width'
+  | 'height'
+  | 'faceAreaRatio'
+  | 'faceCenterOffsetX'
+  | 'faceCenterOffsetY'
+  | 'faceCount'
+  | 'yaw'
+  | 'pitch'
+  | 'roll'
+  | 'eyeOpenness'
+  | 'smileIntensity';
+
+export const NUMERIC_FEATURE_FIELDS = Object.keys(
+  FEATURE_RULES,
+) as readonly NumericFeatureField[];
+
+/** Fields describing the upload rather than measuring it. */
+export const BOOLEAN_FEATURE_FIELDS = [
+  'eyeRegionMeasured',
+  'isGrayscale',
+  'aspectExtreme',
+] as const;
+
+export const STRING_FEATURE_FIELDS = ['sourceFormat'] as const;
+
+export const FEATURE_FIELDS = [
+  ...NUMERIC_FEATURE_FIELDS,
+  ...BOOLEAN_FEATURE_FIELDS,
+  ...STRING_FEATURE_FIELDS,
+] as readonly ComputedFeatureField[];
 
 /**
  * Call this at every boundary where features are read back from cache.
@@ -147,10 +233,17 @@ export function assertFeaturesUsable(f: ComputedFeatures): void {
 
   const record = f as unknown as Record<string, unknown>;
 
-  for (const field of FEATURE_FIELDS) {
+  for (const field of NUMERIC_FEATURE_FIELDS) {
     const value = record[field];
     const rule = FEATURE_RULES[field];
 
+    if (value === null) {
+      if (rule.nullable === true) {
+        // Null is the documented "unmeasurable" signal for this field.
+        continue;
+      }
+      throw new FeatureError(field, value, 'expected a number');
+    }
     if (typeof value !== 'number') {
       throw new FeatureError(field, value, 'expected a number');
     }
@@ -166,5 +259,28 @@ export function assertFeaturesUsable(f: ComputedFeatures): void {
     if (value < rule.min || value > rule.max) {
       throw new FeatureError(field, value, `must be within [${rule.min}, ${rule.max}]`);
     }
+  }
+
+  for (const field of BOOLEAN_FEATURE_FIELDS) {
+    if (typeof record[field] !== 'boolean') {
+      throw new FeatureError(field, record[field], 'expected a boolean');
+    }
+  }
+
+  for (const field of STRING_FEATURE_FIELDS) {
+    const value = record[field];
+    if (typeof value !== 'string' || value === '') {
+      throw new FeatureError(field, value, 'expected a non-empty string');
+    }
+  }
+
+  // The two sharpness fields have to agree, or the scorer cannot tell
+  // which calibration map applies.
+  if (f.eyeRegionMeasured !== (f.sharpnessEyeRegion !== null)) {
+    throw new FeatureError(
+      'eyeRegionMeasured',
+      f.eyeRegionMeasured,
+      `disagrees with sharpnessEyeRegion (${f.sharpnessEyeRegion === null ? 'null' : 'a number'})`,
+    );
   }
 }

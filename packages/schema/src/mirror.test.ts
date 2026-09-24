@@ -48,6 +48,10 @@ const features: ComputedFeatures = {
   roll: 1.2,
   eyeOpenness: 0.78,
   smileIntensity: 0.33,
+  eyeRegionMeasured: true,
+  isGrayscale: false,
+  aspectExtreme: false,
+  sourceFormat: 'jpeg',
 };
 
 const assessed = { background: 4, attire: 3, expression: 4, solo: 5 };
@@ -64,7 +68,13 @@ describe('scoring mirror', () => {
   });
 
   it('emits a confidence inside the schema bounds even for a faceless image', () => {
-    const faceless: ComputedFeatures = { ...features, faceCount: 0, faceAreaRatio: 0 };
+    const faceless: ComputedFeatures = {
+      ...features,
+      faceCount: 0,
+      faceAreaRatio: 0,
+      sharpnessEyeRegion: null,
+      eyeRegionMeasured: false,
+    };
     const axes = AxisScores.parse({ ...scoreComputedAxes(faceless), ...assessed });
     const result = scorePhoto(axes, 'startup', { confidence: computeConfidence(faceless) });
     expect(ScoreResultSchema.parse(result).confidence).toBeLessThan(1);

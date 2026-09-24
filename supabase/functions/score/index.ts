@@ -83,6 +83,31 @@ function readFeature(vector: Record<string, unknown>, field: string): number {
   return value;
 }
 
+/**
+ * `sharpnessEyeRegion` is the one measurement allowed to be null, which
+ * means "unmeasurable" - no face, or a crop too small to convolve. It is
+ * NOT a synonym for zero: a flat eye region really does measure zero and
+ * must score as such rather than falling back to the whole frame.
+ */
+function readNullableFeature(vector: Record<string, unknown>, field: string): number | null {
+  const value = vector[field];
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new TypeError(`Cached feature "${field}" is neither null nor a finite number`);
+  }
+  return value;
+}
+
+function readFlag(vector: Record<string, unknown>, field: string): boolean {
+  const value = vector[field];
+  if (typeof value !== 'boolean') {
+    throw new TypeError(`Cached feature "${field}" is not a boolean`);
+  }
+  return value;
+}
+
 function readFeatures(vector: Record<string, unknown>): PixelFeatures & {
   yaw: number;
   pitch: number;
@@ -91,7 +116,8 @@ function readFeatures(vector: Record<string, unknown>): PixelFeatures & {
     width: readFeature(vector, 'width'),
     height: readFeature(vector, 'height'),
     sharpnessLaplacian: readFeature(vector, 'sharpnessLaplacian'),
-    sharpnessEyeRegion: readFeature(vector, 'sharpnessEyeRegion'),
+    sharpnessEyeRegion: readNullableFeature(vector, 'sharpnessEyeRegion'),
+    eyeRegionMeasured: readFlag(vector, 'eyeRegionMeasured'),
     jpegQualityEstimate: readFeature(vector, 'jpegQualityEstimate'),
     dynamicRange: readFeature(vector, 'dynamicRange'),
     clippedHighlights: readFeature(vector, 'clippedHighlights'),

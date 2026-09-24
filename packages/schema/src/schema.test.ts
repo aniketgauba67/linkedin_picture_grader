@@ -10,10 +10,12 @@ import {
   ScoreContext,
 } from './axes.js';
 import {
+  BOOLEAN_FEATURE_FIELDS,
   ComputedFeatures,
-  FEATURE_FIELDS,
   FEATURE_RULES,
   FeatureError,
+  NUMERIC_FEATURE_FIELDS,
+  STRING_FEATURE_FIELDS,
   assertFeaturesUsable,
 } from './features.js';
 import { Assessment, JudgedAxis } from './assessment.js';
@@ -41,6 +43,10 @@ const usable: ComputedFeatures = {
   roll: 0.8,
   eyeOpenness: 0.82,
   smileIntensity: 0.41,
+  eyeRegionMeasured: true,
+  isGrayscale: false,
+  aspectExtreme: false,
+  sourceFormat: 'jpeg',
 };
 
 const validScores: AxisScores = {
@@ -156,15 +162,21 @@ describe('ComputedFeatures', () => {
     expect(ComputedFeatures.parse(usable)).toEqual(usable);
   });
 
-  it('has a runtime rule for every field it declares', () => {
-    expect([...FEATURE_FIELDS].sort()).toEqual(Object.keys(ComputedFeatures.shape).sort());
+  it('accounts for every declared field exactly once', () => {
+    const covered = [
+      ...NUMERIC_FEATURE_FIELDS,
+      ...BOOLEAN_FEATURE_FIELDS,
+      ...STRING_FEATURE_FIELDS,
+    ].sort();
+    expect(covered).toEqual(Object.keys(ComputedFeatures.shape).sort());
+    expect(new Set(covered).size).toBe(covered.length);
   });
 
-  it.each(FEATURE_FIELDS)('rejects NaN in %s', (field) => {
+  it.each(NUMERIC_FEATURE_FIELDS)('rejects NaN in %s', (field) => {
     expect(ComputedFeatures.safeParse({ ...usable, [field]: Number.NaN }).success).toBe(false);
   });
 
-  it.each(FEATURE_FIELDS)('rejects Infinity in %s', (field) => {
+  it.each(NUMERIC_FEATURE_FIELDS)('rejects Infinity in %s', (field) => {
     expect(
       ComputedFeatures.safeParse({ ...usable, [field]: Number.POSITIVE_INFINITY }).success,
     ).toBe(false);
@@ -173,11 +185,44 @@ describe('ComputedFeatures', () => {
     ).toBe(false);
   });
 
-  it.each(FEATURE_FIELDS)('rejects a string in %s', (field) => {
+  it.each(NUMERIC_FEATURE_FIELDS)('rejects a string in %s', (field) => {
     expect(ComputedFeatures.safeParse({ ...usable, [field]: '1' }).success).toBe(false);
   });
 
-  it.each(FEATURE_FIELDS)('rejects a missing %s', (field) => {
+  it('accepts null for sharpnessEyeRegion and nothing else', () => {
+    expect(
+      ComputedFeatures.safeParse({
+        ...usable,
+        sharpnessEyeRegion: null,
+        eyeRegionMeasured: false,
+      }).success,
+    ).toBe(true);
+    for (const field of NUMERIC_FEATURE_FIELDS) {
+      if (field === 'sharpnessEyeRegion') continue;
+      expect(ComputedFeatures.safeParse({ ...usable, [field]: null }).success).toBe(false);
+    }
+  });
+
+  it('keeps zero distinct from null on sharpnessEyeRegion', () => {
+    // A black eye region genuinely measures zero. If zero and null were
+    // the same value the scorer would fall back to the whole frame and
+    // rescue exactly the photo this measurement exists to catch.
+    const measuredZero = ComputedFeatures.parse({ ...usable, sharpnessEyeRegion: 0 });
+    expect(measuredZero.sharpnessEyeRegion).toBe(0);
+    expect(measuredZero.eyeRegionMeasured).toBe(true);
+  });
+
+  it.each(BOOLEAN_FEATURE_FIELDS)('requires %s to be a boolean', (field) => {
+    expect(ComputedFeatures.safeParse({ ...usable, [field]: 'yes' }).success).toBe(false);
+    expect(ComputedFeatures.safeParse({ ...usable, [field]: 1 }).success).toBe(false);
+  });
+
+  it('requires a non-empty sourceFormat', () => {
+    expect(ComputedFeatures.safeParse({ ...usable, sourceFormat: '' }).success).toBe(false);
+    expect(ComputedFeatures.parse({ ...usable, sourceFormat: 'heic' }).sourceFormat).toBe('heic');
+  });
+
+  it.each([...NUMERIC_FEATURE_FIELDS, ...BOOLEAN_FEATURE_FIELDS, ...STRING_FEATURE_FIELDS])('rejects a missing %s', (field) => {
     const partial: Record<string, unknown> = { ...usable };
     delete partial[field];
     expect(ComputedFeatures.safeParse(partial).success).toBe(false);
@@ -206,7 +251,7 @@ describe('assertFeaturesUsable', () => {
     expect(() => assertFeaturesUsable(usable)).not.toThrow();
   });
 
-  it.each(FEATURE_FIELDS)('throws a FeatureError naming %s when it is NaN', (field) => {
+  it.each(NUMERIC_FEATURE_FIELDS)('throws a FeatureError naming %s when it is NaN', (field) => {
     const corrupt = { ...usable, [field]: Number.NaN };
     expect(() => assertFeaturesUsable(corrupt)).toThrow(FeatureError);
     try {
@@ -240,13 +285,40 @@ describe('assertFeaturesUsable', () => {
     expect(() => assertFeaturesUsable(fromJson)).toThrow(/exposureMean.*expected a number/s);
   });
 
+  it.each(BOOLEAN_FEATURE_FIELDS)('names %s when it is not a boolean', (field) => {
+    expect(() => assertFeaturesUsable({ ...usable, [field]: 'yes' })).toThrow(
+      new RegExp(`${field}.*expected a boolean`, 's'),
+    );
+  });
+
+  it.each(STRING_FEATURE_FIELDS)('names %s when it is empty', (field) => {
+    expect(() => assertFeaturesUsable({ ...usable, [field]: '' })).toThrow(
+      new RegExp(`${field}.*non-empty string`, 's'),
+    );
+  });
+
+  it('accepts a null eye-region measurement when the flag agrees', () => {
+    expect(() =>
+      assertFeaturesUsable({ ...usable, sharpnessEyeRegion: null, eyeRegionMeasured: false }),
+    ).not.toThrow();
+  });
+
+  it('rejects a flag that disagrees with the measurement, in both directions', () => {
+    expect(() =>
+      assertFeaturesUsable({ ...usable, sharpnessEyeRegion: null, eyeRegionMeasured: true }),
+    ).toThrow(/eyeRegionMeasured/);
+    expect(() =>
+      assertFeaturesUsable({ ...usable, sharpnessEyeRegion: 12, eyeRegionMeasured: false }),
+    ).toThrow(/eyeRegionMeasured/);
+  });
+
   it('rejects null and a non-object at the root', () => {
     expect(() => assertFeaturesUsable(null as unknown as ComputedFeatures)).toThrow(FeatureError);
     expect(() => assertFeaturesUsable(7 as unknown as ComputedFeatures)).toThrow(/\(root\)/);
   });
 
   it('agrees with the schema on every field it guards', () => {
-    for (const field of FEATURE_FIELDS) {
+    for (const field of NUMERIC_FEATURE_FIELDS) {
       const rule = FEATURE_RULES[field];
       const belowMin = { ...usable, [field]: rule.min - 1 };
       expect(ComputedFeatures.safeParse(belowMin).success).toBe(false);

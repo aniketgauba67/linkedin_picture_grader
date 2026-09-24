@@ -39,12 +39,14 @@ export type { AxisWeights, Context } from './weights.js';
 export {
   JPEG_QUALITY_FLOOR,
   PIXEL_THRESHOLDS,
+  SHARPNESS_THRESHOLDS,
   faceCenterOffset,
   framingScore,
   lightingScore,
   resolutionScore,
   scoreAgainstThresholds,
   scoreComputedAxes,
+  sharpnessBasis,
   sharpnessScore,
 } from './pixel-axes.js';
 export type { PixelFeatures } from './pixel-axes.js';

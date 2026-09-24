@@ -31,6 +31,10 @@ const features: ComputedFeatures = {
   roll: 1.2,
   eyeOpenness: 0.78,
   smileIntensity: 0.33,
+  eyeRegionMeasured: true,
+  isGrayscale: false,
+  aspectExtreme: false,
+  sourceFormat: 'jpeg',
 };
 
 const assessment: Assessment = {
@@ -144,14 +148,14 @@ describe('insertPhoto', () => {
 describe('getFeaturesByHash', () => {
   it('returns cached features for known bytes', async () => {
     const fake = createFakeClient([{ data: { computed: features } }]);
-    const cached = await getFeaturesByHash(fake.client, 'hash-1', 'v2');
+    const cached = await getFeaturesByHash(fake.client, 'hash-1', 'v3');
     expect(cached?.features.width).toBe(1500);
     expect(cached?.sha256).toBe('hash-1');
   });
 
   it('reads the shared cache, not anybody photo rows', async () => {
     const fake = createFakeClient([{ data: { computed: features } }]);
-    await getFeaturesByHash(fake.client, 'hash-1', 'v2');
+    await getFeaturesByHash(fake.client, 'hash-1', 'v3');
     expect(fake.argsFor('from')).toEqual(['feature_cache']);
     expect(fake.calls.some((call) => call.args[0] === 'photos')).toBe(false);
   });
@@ -168,10 +172,28 @@ describe('getFeaturesByHash', () => {
     expect(filters).toContainEqual(['extractor_version', 'v7']);
   });
 
+  it('refuses a cached vector whose sharpness basis flag disagrees', async () => {
+    // A vector that claims the eye region was measured while carrying no
+    // measurement would send the scorer to the wrong calibration map.
+    const inconsistent = { ...features, sharpnessEyeRegion: null, eyeRegionMeasured: true };
+    const fake = createFakeClient([{ data: { computed: inconsistent } }]);
+    await expect(getFeaturesByHash(fake.client, 'hash-1', 'v3')).rejects.toThrow(
+      /eyeRegionMeasured/,
+    );
+  });
+
+  it('accepts a cached vector with an unmeasurable eye region', async () => {
+    const unmeasured = { ...features, sharpnessEyeRegion: null, eyeRegionMeasured: false };
+    const fake = createFakeClient([{ data: { computed: unmeasured } }]);
+    const cached = await getFeaturesByHash(fake.client, 'hash-1', 'v3');
+    expect(cached?.features.sharpnessEyeRegion).toBeNull();
+    expect(cached?.features.eyeRegionMeasured).toBe(false);
+  });
+
   it('refuses a cached vector carrying a NaN', async () => {
     const corrupt = { ...features, dynamicRange: Number.NaN };
     const fake = createFakeClient([{ data: { computed: corrupt } }]);
-    await expect(getFeaturesByHash(fake.client, 'hash-1', 'v2')).rejects.toThrow();
+    await expect(getFeaturesByHash(fake.client, 'hash-1', 'v3')).rejects.toThrow();
   });
 });
 
@@ -182,7 +204,7 @@ describe('upsertFeatures', () => {
       photoId: 'photo-1',
       sha256: 'hash-1',
       features,
-      extractorVersion: 'v2',
+      extractorVersion: 'v3',
     });
     expect(fake.argsFor('rpc')).toEqual([
       'record_extraction',
@@ -190,7 +212,7 @@ describe('upsertFeatures', () => {
         p_photo_id: 'photo-1',
         p_sha256: 'hash-1',
         p_computed: features,
-        p_extractor_version: 'v2',
+        p_extractor_version: 'v3',
         p_embedding: null,
       },
     ]);
@@ -202,7 +224,7 @@ describe('upsertFeatures', () => {
       photoId: 'photo-1',
       sha256: null,
       features,
-      extractorVersion: 'v2',
+      extractorVersion: 'v3',
     });
     const args = fake.argsFor('rpc')?.[1] as { p_sha256: string | null };
     expect(args.p_sha256).toBeNull();
@@ -214,7 +236,7 @@ describe('upsertFeatures', () => {
       photoId: 'photo-1',
       sha256: 'hash-1',
       features,
-      extractorVersion: 'v2',
+      extractorVersion: 'v3',
       embedding: Array.from({ length: 512 }, (_, i) => i / 512),
     });
     const args = fake.argsFor('rpc')?.[1] as { p_embedding: string };
@@ -229,7 +251,7 @@ describe('upsertFeatures', () => {
         photoId: 'photo-1',
         sha256: 'hash-1',
         features,
-        extractorVersion: 'v2',
+        extractorVersion: 'v3',
         embedding: [1, 2, 3],
       }),
     ).rejects.toThrow(/512 dimensions/);
@@ -242,7 +264,7 @@ describe('upsertFeatures', () => {
         photoId: 'photo-1',
         sha256: 'hash-1',
         features: { ...features, faceCount: Number.POSITIVE_INFINITY },
-        extractorVersion: 'v2',
+        extractorVersion: 'v3',
       }),
     ).rejects.toThrow(/faceCount/);
   });
@@ -251,13 +273,13 @@ describe('upsertFeatures', () => {
 describe('pruneFeatureCache', () => {
   it('keeps the current extractor version and reports what it dropped', async () => {
     const fake = createFakeClient([{ data: 12 }]);
-    expect(await pruneFeatureCache(fake.client, 'v2')).toBe(12);
-    expect(fake.argsFor('rpc')).toEqual(['prune_feature_cache', { p_keep_version: 'v2' }]);
+    expect(await pruneFeatureCache(fake.client, 'v3')).toBe(12);
+    expect(fake.argsFor('rpc')).toEqual(['prune_feature_cache', { p_keep_version: 'v3' }]);
   });
 
   it('throws rather than reporting a phantom zero', async () => {
     const fake = createFakeClient([{ error: { message: 'permission denied' } }]);
-    await expect(pruneFeatureCache(fake.client, 'v2')).rejects.toThrow(/permission denied/);
+    await expect(pruneFeatureCache(fake.client, 'v3')).rejects.toThrow(/permission denied/);
   });
 });
 

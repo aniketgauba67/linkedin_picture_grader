@@ -8,6 +8,18 @@
  * runs on that cache.
  */
 export { ANALYSIS_EDGE, extractFeatures, toLumaPlane } from './extract.js';
+export { ImageDecodeError, asDecodeError } from './errors.js';
+export {
+  EXTREME_ASPECT_RATIO,
+  MAX_INPUT_PIXELS,
+  describeSource,
+  detectSourceFormat,
+  isHeif,
+  normalizeImage,
+  normalizedPipeline,
+  prepareImage,
+} from './normalize.js';
+export type { PreparedImage, SourceInfo } from './normalize.js';
 export { laplacianVariance } from './sharpness.js';
 export { lightingStats } from './lighting.js';
 export type { LightingStats } from './lighting.js';

@@ -12,7 +12,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "//": "DELIBERATELY EMPTY. This package is the one piece of the system that runs in all three runtimes: Node (Vercel functions), Deno (Supabase Edge Functions, where the 20MB bundle cap and 2s CPU budget leave no room for a dependency tree), and the browser (optimistic client-side re-scoring). Every import here must resolve to the JS standard library. Adding a dependency - including a type-only one - breaks the Deno and browser targets. Keep this object empty.",
   "dependencies": {},
   "scripts": {
@@ -20,7 +22,7 @@
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
     "test": "vitest run",
     "lint": "eslint src",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
     "clean": "rm -rf dist .turbo"
   },
   "devDependencies": {

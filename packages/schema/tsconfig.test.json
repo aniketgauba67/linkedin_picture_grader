@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Widened from src/ so the vitest config is in scope. This config
+    // never emits, so rootDir carries no meaning here.
+    "rootDir": "."
+  },
+  // The build config excludes tests so they are not emitted. This one
+  // adds them back purely to typecheck, which is what makes the
+  // compile-time assertions in the mirror tests actually run.
+  "include": ["src/**/*.ts", "vitest.config.ts"],
+  "exclude": []
+}

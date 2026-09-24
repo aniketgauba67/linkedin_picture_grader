@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { PixelFeatures } from './pixel-axes.js';
 import {
   JPEG_QUALITY_FLOOR,
+  SHARPNESS_THRESHOLDS,
   faceCenterOffset,
   framingScore,
   lightingScore,
   resolutionScore,
   scoreAgainstThresholds,
   scoreComputedAxes,
+  sharpnessBasis,
   sharpnessScore,
 } from './pixel-axes.js';
 import { COMPUTED_AXES } from './axes.js';
@@ -17,6 +19,7 @@ const baseline: PixelFeatures = {
   height: 1200,
   sharpnessLaplacian: 400,
   sharpnessEyeRegion: 400,
+  eyeRegionMeasured: true,
   jpegQualityEstimate: 90,
   dynamicRange: 180,
   clippedHighlights: 0.005,
@@ -51,14 +54,35 @@ describe('sharpnessScore', () => {
     expect(softEyes).toBe(1);
   });
 
-  it('falls back to the whole frame when there is no face', () => {
-    const noFace = sharpnessScore({
+  it('treats a measured zero as a real zero, not as unmeasurable', () => {
+    // A black eye region genuinely has no edge energy. The whole point of
+    // the explicit flag is that this does NOT fall through to the frame.
+    const blackEyes = sharpnessScore({
+      ...baseline,
+      sharpnessLaplacian: 5000,
+      sharpnessEyeRegion: 0,
+      eyeRegionMeasured: true,
+    });
+    expect(blackEyes).toBe(1);
+    expect(sharpnessBasis({ ...baseline, sharpnessEyeRegion: 0 })).toBe('eyeRegion');
+  });
+
+  it('falls back to the whole frame only when the eye region is unmeasurable', () => {
+    const unmeasurable = {
       ...baseline,
       faceCount: 0,
-      sharpnessEyeRegion: 0,
+      sharpnessEyeRegion: null,
+      eyeRegionMeasured: false,
       sharpnessLaplacian: 900,
-    });
-    expect(noFace).toBe(5);
+    };
+    expect(sharpnessScore(unmeasurable)).toBe(5);
+    expect(sharpnessBasis(unmeasurable)).toBe('frame');
+  });
+
+  it('scores each basis against its own ladder', () => {
+    expect(SHARPNESS_THRESHOLDS.frame).not.toBe(SHARPNESS_THRESHOLDS.eyeRegion);
+    expect(SHARPNESS_THRESHOLDS.frame).toHaveLength(4);
+    expect(SHARPNESS_THRESHOLDS.eyeRegion).toHaveLength(4);
   });
 
   it('costs a point when JPEG artifacts are faking the edge energy', () => {

@@ -2,6 +2,7 @@ import type { Assessment, ComputedFeatures, ScoreContext, ScoreResult } from '@p
 import {
   Assessment as AssessmentSchema,
   ComputedFeatures as ComputedFeaturesSchema,
+  EXTRACTOR_VERSION,
   assertFeaturesUsable,
 } from '@pps/schema';
 import type { Client } from './client.js';
@@ -105,7 +106,8 @@ export async function insertPhoto(
 
 export interface CachedFeatures {
   readonly sha256: string;
-  readonly extractorVersion: string;
+  /** Defaults to EXTRACTOR_VERSION, which is derived from the schema version. */
+  readonly extractorVersion?: string;
   readonly features: ComputedFeatures;
 }
 
@@ -124,7 +126,7 @@ export interface CachedFeatures {
 export async function getFeaturesByHash(
   client: Client,
   sha256: string,
-  extractorVersion: string,
+  extractorVersion: string = EXTRACTOR_VERSION,
 ): Promise<CachedFeatures | null> {
   const { data, error } = await client
     .from('feature_cache')
@@ -150,7 +152,8 @@ export async function getFeaturesByHash(
 export interface UpsertFeaturesInput {
   readonly photoId: string;
   readonly features: ComputedFeatures;
-  readonly extractorVersion: string;
+  /** Defaults to EXTRACTOR_VERSION, which is derived from the schema version. */
+  readonly extractorVersion?: string;
   /**
    * Content hash, so the extraction lands in the shared cache too. Pass
    * null only for a photo whose hash has already been stripped by
@@ -182,7 +185,7 @@ export async function upsertFeatures(client: Client, input: UpsertFeaturesInput)
     p_photo_id: input.photoId,
     p_sha256: input.sha256,
     p_computed: input.features,
-    p_extractor_version: input.extractorVersion,
+    p_extractor_version: input.extractorVersion ?? EXTRACTOR_VERSION,
     // pgvector accepts its text form; a bare JSON array does not cast.
     p_embedding: input.embedding == null ? null : `[${input.embedding.join(',')}]`,
   });
@@ -201,7 +204,7 @@ export async function upsertFeatures(client: Client, input: UpsertFeaturesInput)
  */
 export async function pruneFeatureCache(
   client: Client,
-  keepExtractorVersion: string,
+  keepExtractorVersion: string = EXTRACTOR_VERSION,
 ): Promise<number> {
   const { data, error } = await client.rpc('prune_feature_cache', {
     p_keep_version: keepExtractorVersion,

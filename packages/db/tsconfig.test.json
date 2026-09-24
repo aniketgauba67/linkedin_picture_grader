@@ -2,10 +2,13 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node"],
     // Widened from src/: this config only typechecks, it never emits, so
     // the test harness and vitest config are in scope too.
     "rootDir": "."
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts", "scripts/**/*.mjs"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts", "scripts/**/*.mjs"],
+  // The base config excludes src/**/*.test.ts so they are not emitted.
+  // Reset it here, or the unit tests beside the source go unchecked -
+  // which is exactly how the mirror tests went unchecked for so long.
+  "exclude": []
 }

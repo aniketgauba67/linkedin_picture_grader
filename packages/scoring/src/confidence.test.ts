@@ -7,6 +7,7 @@ const certain: ConfidenceInputs = {
   height: 1600,
   sharpnessLaplacian: 400,
   sharpnessEyeRegion: 480,
+  eyeRegionMeasured: true,
   jpegQualityEstimate: 92,
   dynamicRange: 190,
   clippedHighlights: 0.003,
@@ -17,7 +18,6 @@ const certain: ConfidenceInputs = {
   faceCount: 1,
   yaw: 2,
   pitch: -3,
-  roll: 1,
 };
 
 describe('computeConfidence', () => {

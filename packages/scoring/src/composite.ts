@@ -37,7 +37,10 @@ export interface ScoreResultShape {
   readonly score: number;
   readonly axes: Readonly<Record<AxisName, number>>;
   readonly context: Context;
-  readonly fixes: readonly Fix[];
+  // Not `readonly Fix[]`: @pps/schema infers a mutable array from zod,
+  // and a mirror that differs in mutability is not a mirror. The schema
+  // is the source of truth, so this follows it.
+  readonly fixes: Fix[];
   readonly confidence: number;
   readonly weightsVersion: string;
 }
@@ -99,7 +102,7 @@ export function axisBreakdown(
 export function buildFixes(
   breakdown: readonly AxisBreakdown[],
   maxFixes: number = MAX_FIXES,
-): readonly Fix[] {
+): Fix[] {
   return breakdown
     .filter((entry) => entry.score < AXIS_MAX && entry.headroom > 0)
     .slice()

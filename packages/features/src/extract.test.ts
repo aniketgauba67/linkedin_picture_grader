@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import sharp from 'sharp';
-import { ComputedFeatures, FEATURE_FIELDS, assertFeaturesUsable } from '@pps/schema';
-import { scoreComputedAxes } from '@pps/scoring';
-import { extractFeatures, toLumaPlane } from './extract.js';
+import {
+  ComputedFeatures,
+  NUMERIC_FEATURE_FIELDS,
+  assertFeaturesUsable,
+} from '@pps/schema';
+import { scoreComputedAxes, sharpnessBasis, sharpnessScore } from '@pps/scoring';
+import { ANALYSIS_EDGE, extractFeatures, toLumaPlane } from './extract.js';
+import { ImageDecodeError } from './errors.js';
 import type { FaceObservation } from './face.js';
 import { setDetector } from './face.js';
 
@@ -49,9 +54,13 @@ describe('toLumaPlane', () => {
     expect(plane.data.length).toBe(plane.width * plane.height);
   });
 
-  it('does not enlarge an image that is already small', async () => {
+  it('upscales a small image so every input is measured at one scale', async () => {
+    // Deliberate: measuring a 200px image at native size would put it on
+    // a different Laplacian variance scale than a downsampled 4000px one,
+    // and the shared thresholds would quietly mean two different things.
     const plane = await toLumaPlane(await solid(200, 200, [128, 128, 128]));
-    expect(plane.width).toBe(200);
+    expect(plane.width).toBe(1024);
+    expect(plane.height).toBe(1024);
   });
 });
 
@@ -62,10 +71,18 @@ describe('extractFeatures', () => {
     expect(() => assertFeaturesUsable(features)).not.toThrow();
   });
 
-  it('emits a finite number for every declared field', async () => {
+  it('emits a finite number for every measurement, or a documented null', async () => {
     const features = await extractFeatures(await noise(400, 400));
-    for (const field of FEATURE_FIELDS) {
-      expect(Number.isFinite(features[field])).toBe(true);
+    for (const field of NUMERIC_FEATURE_FIELDS) {
+      const value = features[field];
+      // sharpnessEyeRegion is the one field allowed to be null, and only
+      // when there was nothing to measure.
+      if (value === null) {
+        expect(field).toBe('sharpnessEyeRegion');
+        expect(features.eyeRegionMeasured).toBe(false);
+        continue;
+      }
+      expect(Number.isFinite(value)).toBe(true);
     }
   });
 
@@ -84,20 +101,23 @@ describe('extractFeatures', () => {
     expect(grainy.sharpnessLaplacian).toBeGreaterThan(flat.sharpnessLaplacian);
   });
 
-  it('records no face and floors framing when no detector is registered', async () => {
+  it('reports the eye region as unmeasurable, not zero, with no detector', async () => {
     const features = await extractFeatures(await noise(400, 400));
     expect(features.faceCount).toBe(0);
     expect(features.faceAreaRatio).toBe(0);
-    expect(features.sharpnessEyeRegion).toBe(0);
+    expect(features.sharpnessEyeRegion).toBeNull();
+    expect(features.eyeRegionMeasured).toBe(false);
     expect(scoreComputedAxes(features).framing).toBe(1);
   });
 
   it('measures eye-region sharpness only once a face locates the eyes', async () => {
     const image = await noise(2048, 2048);
-    expect((await extractFeatures(image)).sharpnessEyeRegion).toBe(0);
+    expect((await extractFeatures(image)).sharpnessEyeRegion).toBeNull();
 
     setDetector({ detect: async () => [observation()] });
-    expect((await extractFeatures(image)).sharpnessEyeRegion).toBeGreaterThan(0);
+    const measured = await extractFeatures(image);
+    expect(measured.eyeRegionMeasured).toBe(true);
+    expect(measured.sharpnessEyeRegion).toBeGreaterThan(0);
   });
 
   it('reports framing as ratios of the frame, independent of resolution', async () => {
@@ -157,7 +177,142 @@ describe('extractFeatures', () => {
     expect(() => assertFeaturesUsable(features)).not.toThrow();
   });
 
-  it('rejects a buffer that is not an image', async () => {
-    await expect(extractFeatures(Buffer.from('not an image'))).rejects.toThrow();
+  it('rejects a buffer that is not an image with a typed decode error', async () => {
+    await expect(extractFeatures(Buffer.from('not an image'))).rejects.toBeInstanceOf(
+      ImageDecodeError,
+    );
+  });
+
+  it('carries the upload shape flags through', async () => {
+    const grey = await sharp(await noise(300, 300)).greyscale().png().toBuffer();
+    const features = await extractFeatures(grey);
+    expect(features.sourceFormat).toBe('png');
+    expect(features.isGrayscale).toBe(true);
+    expect(features.aspectExtreme).toBe(false);
+  });
+
+  it('flags a panorama rather than silently mis-scoring its framing', async () => {
+    const features = await extractFeatures(await noise(1500, 300));
+    expect(features.aspectExtreme).toBe(true);
+  });
+
+  it('handles a 1x1 image without throwing and returns finite values', async () => {
+    const features = await extractFeatures(await solid(1, 1, [128, 128, 128]));
+    expect(features.width).toBe(1);
+    expect(features.height).toBe(1);
+    expect(() => assertFeaturesUsable(features)).not.toThrow();
+    expect(features.sharpnessLaplacian).toBe(0);
+    expect(Number.isNaN(features.dynamicRange)).toBe(false);
+  });
+
+  it('measures every input at the same scale, upscaling small images', async () => {
+    // Without upscaling, a 400px image would be measured at native size
+    // and sit on a different variance scale than a downsampled 4000px
+    // one, silently breaking the shared thresholds.
+    const small = await toLumaPlane(await noise(400, 400));
+    const large = await toLumaPlane(await noise(2400, 2400));
+    expect(Math.max(small.width, small.height)).toBe(ANALYSIS_EDGE);
+    expect(Math.max(large.width, large.height)).toBe(ANALYSIS_EDGE);
+  });
+
+  it('scores a sharp image above the same image blurred', async () => {
+    const source = await noise(1200, 1200);
+    const blurred = await sharp(source).blur(4).png().toBuffer();
+    const sharpFeatures = await extractFeatures(source);
+    const blurredFeatures = await extractFeatures(blurred);
+    expect(blurredFeatures.sharpnessLaplacian).toBeLessThan(sharpFeatures.sharpnessLaplacian);
+  });
+
+  it('reports a fully white image as clipped', async () => {
+    const features = await extractFeatures(await solid(256, 256, [255, 255, 255]));
+    expect(features.clippedHighlights).toBeCloseTo(1, 2);
+  });
+
+  it('reports a mid-gray image as flat, with no NaN anywhere', async () => {
+    const features = await extractFeatures(await solid(256, 256, [128, 128, 128]));
+    expect(features.dynamicRange).toBe(0);
+    expect(() => assertFeaturesUsable(features)).not.toThrow();
+  });
+});
+
+describe('sharpness basis', () => {
+  /**
+   * The measured path has to be a first-class tested path before any
+   * model ships, so these inject a face box straight into the detector
+   * interface rather than waiting on ONNX.
+   */
+  async function withFace(image: Buffer, box: FaceObservation['box']) {
+    setDetector({ detect: async () => [observation({ box })] });
+    return extractFeatures(image);
+  }
+
+  it('a black eye region measures 0 and stays measured - it must not fall back', async () => {
+    // A face whose eye band is solid black. Zero is the honest answer and
+    // the photo should score sharpness 1; the full-frame fallback would
+    // rescue it, which inverts the whole point of the eye-region measure.
+    const W = 1024;
+    const pixels = Buffer.alloc(W * W * 3);
+    let seed = 11;
+    for (let i = 0; i < pixels.length; i += 1) {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      pixels[i] = seed % 256;
+    }
+    // Black out the band eyeRegionOf will crop: 22%-52% down the box.
+    const box = { x: 0, y: 0, width: W, height: W, confidence: 0.95 };
+    const top = Math.floor(W * 0.22);
+    const bottom = Math.ceil(W * 0.52);
+    pixels.fill(0, top * W * 3, bottom * W * 3);
+
+    const image = await sharp(pixels, { raw: { width: W, height: W, channels: 3 } })
+      .png()
+      .toBuffer();
+
+    const features = await withFace(image, box);
+
+    expect(features.eyeRegionMeasured).toBe(true);
+    expect(features.sharpnessEyeRegion).toBe(0);
+    expect(features.sharpnessEyeRegion).not.toBeNull();
+    // The frame is full of noise and would score 5 on the fallback.
+    expect(features.sharpnessLaplacian).toBeGreaterThan(700);
+    expect(sharpnessBasis(features)).toBe('eyeRegion');
+    expect(sharpnessScore(features)).toBe(1);
+  });
+
+  it('falls back to the frame only when the eye band is genuinely unmeasurable', async () => {
+    const features = await extractFeatures(await noise(900, 900));
+    expect(features.eyeRegionMeasured).toBe(false);
+    expect(features.sharpnessEyeRegion).toBeNull();
+    expect(sharpnessBasis(features)).toBe('frame');
+    expect(sharpnessScore(features)).toBeGreaterThan(1);
+  });
+
+  it('reports unmeasurable when the eye band falls outside the frame', async () => {
+    const image = await noise(800, 800);
+    const features = await withFace(image, {
+      x: 5000,
+      y: 5000,
+      width: 100,
+      height: 100,
+      confidence: 0.9,
+    });
+    expect(features.eyeRegionMeasured).toBe(false);
+    expect(features.sharpnessEyeRegion).toBeNull();
+  });
+
+  it('reports unmeasurable when the crop is too small to convolve', async () => {
+    const image = await noise(800, 800);
+    // 2px wide: narrower than the 3x3 kernel, so there is nothing to
+    // convolve even though the box does overlap the frame.
+    const features = await withFace(image, { x: 10, y: 10, width: 2, height: 6, confidence: 0.9 });
+    expect(features.eyeRegionMeasured).toBe(false);
+    expect(features.sharpnessEyeRegion).toBeNull();
+  });
+
+  it('keeps the flag and the value in agreement, which the guard enforces', async () => {
+    const features = await extractFeatures(await noise(600, 600));
+    expect(() => assertFeaturesUsable(features)).not.toThrow();
+    expect(() =>
+      assertFeaturesUsable({ ...features, eyeRegionMeasured: true }),
+    ).toThrow(/eyeRegionMeasured/);
   });
 });
