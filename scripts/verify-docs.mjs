@@ -1,0 +1,117 @@
+/**
+ * Verifies that load-bearing comments and documentation are actually in
+ * the files, rather than merely claimed by a commit message.
+ *
+ * This exists because a str.replace with a needle that does not match is
+ * a silent no-op. A code edit that fails to apply usually breaks the
+ * typecheck or a test; a PROSE edit that fails to apply looks exactly
+ * like one that succeeded. That is how 811b305 shipped a commit message
+ * describing an anchor rewrite the file never received.
+ *
+ * Every entry below is a claim some commit made. Whitespace and line
+ * wrapping are normalised, so a phrase that wraps across lines still
+ * matches.
+ */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+/** @type {{file: string, claim: string, phrase: string}[]} */
+const CLAIMS = [
+  // --- 2a05c6e: deployment gotchas ---
+  ['CLAUDE.md', 'deployment gotchas section exists', '## Deployment gotchas'],
+  ['CLAUDE.md', 'local vercel build does not reproduce the trace', 'does not reproduce the real file trace'],
+  ['CLAUDE.md', 'the measured bundle size', '36.86MB'],
+  ['CLAUDE.md', 'Vercel needs Git LFS enabled', 'Vercel needs Git LFS switched on'],
+  ['CLAUDE.md', '.npmrc is load-bearing', '.npmrc` is load-bearing'],
+  ['CLAUDE.md', 'side-effects cache can make a fix inert', "side-effects cache can make an install-config fix inert"],
+  ['CLAUDE.md', 'nothing is proven until invoked', 'Nothing is proven about the native stack until it is invoked'],
+
+  // --- 2a05c6e: the three probe fixes, each naming its symptom ---
+  ['packages/features/src/scrfd.ts', 'webpackIgnore names its symptom', 'Module parse failed'],
+  ['packages/features/src/onnx-detector.ts', 'webpackIgnore comment on both call sites', 'webpackIgnore is load-bearing'],
+  ['apps/web/next.config.ts', 'externalising @pps/features names its symptom', 'FIRST INVOCATION, NOT AT BUILD TIME'],
+  ['apps/web/package.json', 'native deps note names its symptom', 'FIRST INVOCATION, NOT AT BUILD TIME'],
+
+  // --- CUDA skip ---
+  ['.npmrc', 'says it is load-bearing', 'LOAD-BEARING'],
+  ['.npmrc', 'explains the linux/x64-only CUDA default', 'Every platform requires nothing EXCEPT linux/x64'],
+  ['.npmrc', 'explains the side-effects cache', 'pnpm caches the FILES A POSTINSTALL PRODUCED'],
+
+  // --- explicit sharpness basis (3c3c388) ---
+  ['packages/schema/src/features.ts', 'null is not a synonym for zero', 'It is not a synonym for zero'],
+  ['packages/schema/src/features.ts', 'pitch null rather than a fabricated zero', 'Emitting 0 would be worse than emitting nothing'],
+  ['packages/scoring/src/pixel-axes.ts', 'null means unmeasurable', 'Null means unmeasurable, never "measured as zero"'],
+  ['packages/scoring/src/confidence.ts', 'penalty over measured pose only', 'contributes nothing rather than contributing a fabricated zero'],
+  ['packages/features/src/extract.ts', 'returns null never 0', 'Returns null - never 0'],
+
+  // --- HEIC orientation (11c6eb0) ---
+  ['packages/features/src/normalize.ts', 'HEVC vs AV1 note', 'no HEVC codec'],
+  ['packages/features/src/normalize.ts', 'why EXIF orientation is re-applied', 'heic-convert throws EXIF away'],
+
+  // --- face detection (e417de2) ---
+  ['packages/features/src/face.ts', 'largest box, not highest confidence', 'Not highest confidence'],
+  ['packages/features/src/scrfd.ts', 'why SCRFD over MediaPipe', 'ModuleFactory not set'],
+
+  // --- rubric (4fd6a9a) ---
+  ['packages/features/src/rubric.ts', 'banner on the two 400s', 'TWO THINGS THAT RETURN HTTP 400'],
+  ['packages/features/src/rubric.ts', 'oneOf rejection recorded', "Schema type 'oneOf' is not supported"],
+  ['packages/features/src/rubric.ts', 'context vs clutter note', 'CONTEXT vs CLUTTER'],
+  ['packages/features/src/rubric.ts', 'no profession inference', 'Do not reason about whether a background element relates'],
+  ['packages/features/src/rubric.ts', 'evidence describes the photograph', 'EVIDENCE DESCRIBES THE PHOTOGRAPH, NEVER THE PERSON'],
+  ['packages/features/src/rubric.ts', 'background level 1 is personal/recreational', 'clearly personal or recreational setting'],
+  ['packages/features/src/rubric.ts', 'background level 2 drops the relatedness test', 'legible text or signage that draws the eye'],
+  ['packages/features/src/rubric.ts', 'background level 4 is a staged backdrop', 'reads as staged rather than incidental'],
+
+  // --- README ---
+  ['README.md', 'retention is two-phase', '## Retention runs in two phases'],
+  ['README.md', 'dedup shares numbers not rows', '## Dedup shares numbers, never rows'],
+  ['README.md', 'CI and branch protection', '## CI and branch protection'],
+  ['README.md', 'HEIC needs a real file', '## HEIC needs a real file to test'],
+  ['README.md', 'the model is in Git LFS', '## The face detector model is in Git LFS'],
+  ['README.md', 'native dependency sizing', '## Native dependency sizing'],
+
+  // --- the rule that exists because of all of the above ---
+  ['CLAUDE.md', 'edit scripts must fail loudly', 'Edit scripts must fail loudly'],
+  ['CLAUDE.md', 'grep masks the exit status before it', "reports grep's exit status, not the command's"],
+].map(([file, claim, phrase]) => ({ file, claim, phrase }));
+
+/**
+ * Normalises away line wrapping AND block-comment continuation markers,
+ * so a phrase that wraps mid-sentence across ` * ` prefixes still
+ * matches. Without this the checker reports false positives on exactly
+ * the long explanatory comments it exists to protect.
+ */
+const squash = (s) =>
+  s
+    .replace(/\n\s*\*\s?/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+let failures = 0;
+const byFile = new Map();
+for (const entry of CLAIMS) {
+  if (!byFile.has(entry.file)) {
+    try {
+      byFile.set(entry.file, squash(readFileSync(join(root, entry.file), 'utf8')));
+    } catch {
+      byFile.set(entry.file, null);
+    }
+  }
+  const body = byFile.get(entry.file);
+  const ok = body !== null && body.includes(squash(entry.phrase));
+  if (!ok) {
+    failures += 1;
+    console.error(`MISSING  ${entry.file}\n         claim : ${entry.claim}\n         phrase: "${entry.phrase}"`);
+  }
+}
+
+console.log(
+  `${CLAIMS.length - failures}/${CLAIMS.length} documented claims verified against the files.`,
+);
+if (failures > 0) {
+  console.error(`\n${failures} claim(s) are not in the files. A commit said otherwise.`);
+  process.exit(1);
+}

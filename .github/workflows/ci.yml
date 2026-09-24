@@ -107,6 +107,13 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # Prose edits fail silently: a str.replace whose needle does not
+      # match returns the text unchanged and exits zero, so a commit
+      # message can describe a comment the file never received. This
+      # checks the load-bearing ones are actually there.
+      - name: Verify documented claims are in the files
+        run: pnpm verify:docs
+
       - name: Test
         # Deliberately no PPS_TEST_DATABASE_URL and no PPS_TEST_HEIC.
         #

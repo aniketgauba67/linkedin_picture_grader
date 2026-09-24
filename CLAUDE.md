@@ -85,6 +85,22 @@ fix keeps handing back the old result - the setting looks ignored. Hence
 `side-effects-cache=false`, and a CI cache key that includes the install
 config rather than just the lockfile.
 
+**Edit scripts must fail loudly.** `str.replace` with a needle that does
+not match returns the text unchanged and exits zero. A code edit that
+does not apply usually breaks the typecheck; a PROSE or PROMPT edit that
+does not apply looks identical to one that did. `811b305` shipped a
+commit message describing a rubric rewrite the file never received - the
+anchors use an em dash and the edit searched for a hyphen.
+
+So: use `node scripts/edit.mjs <file>` with a FIND/REPLACE patch on
+stdin, which exits non-zero when the needle is missing or ambiguous.
+Never accept "the command ran" as evidence an edit applied - read the
+file back. `pnpm verify:docs` checks the load-bearing comments and
+documentation are present, and runs in CI.
+
+The same trap applies to verification itself: `cmd | grep ...` reports
+grep's exit status, not the command's. Check exit codes directly.
+
 **Nothing is proven about the native stack until it is invoked.** LFS,
 model hash, CUDA skip and tracing globs are all build-time checks that
 pass without loading a single native symbol. `/api/health-onnx` (gated
