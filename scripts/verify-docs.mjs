@@ -108,6 +108,13 @@ const CLAIMS = [
   ['training/manifest.ts', 'manifest.csv is the committed provenance record', 'It holds no pixels'],
   ['training/README.md', 'the bad queries have a section explaining themselves', '### Why the BAD queries exist'],
   ['training/collect-corpus.ts', 'a right total can hide a short variant', 'A total that comes out right can still hide a variant that came up short'],
+  ['training/pexels.ts', 'large2x must not come back', 'DO NOT "optimise" this back to large2x'],
+  ['training/pexels.ts', 'the measured evidence for that, not just the assertion', 'every single image came back exactly 1300px tall'],
+  ['training/pexels.ts', 'the pre-filter is named as load-bearing from here', 'is not redundant caching logic'],
+  // Phrase kept inside one line: the squash below rejoins block-comment
+  // continuations, not `//` line comments, so a phrase that spans two
+  // `//` lines can never match.
+  ['training/collect-corpus.ts', 'the pre-filter says why it is not a duplicate check', "protects the bandwidth, and neither can do the other's job"],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**

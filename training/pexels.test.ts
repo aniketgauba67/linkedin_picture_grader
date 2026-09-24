@@ -38,14 +38,14 @@ function respond(
 }
 
 describe('pickSource', () => {
-  it('prefers large2x - big enough for a corpus, not a 20MB original', () => {
-    expect(pickSource(photo())).toBe('https://images.pexels.com/photos/12345/large2x.jpeg');
-    expect(PREFERRED_SIZES[0]).toBe('large2x');
+  it('takes the original - large2x is a fixed 1300px re-encode with no resolution variance', () => {
+    expect(pickSource(photo())).toBe('https://images.pexels.com/photos/12345/original.jpeg');
+    expect(PREFERRED_SIZES[0]).toBe('original');
   });
 
   it('falls back down the list when a size is missing', () => {
+    expect(pickSource(photo({ src: { large2x: 'https://x/l2x.jpeg' } }))).toBe('https://x/l2x.jpeg');
     expect(pickSource(photo({ src: { large: 'https://x/large.jpeg' } }))).toBe('https://x/large.jpeg');
-    expect(pickSource(photo({ src: { original: 'https://x/o.jpeg' } }))).toBe('https://x/o.jpeg');
   });
 
   it('returns null rather than guessing when no known size is offered', () => {

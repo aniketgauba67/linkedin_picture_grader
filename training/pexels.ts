@@ -76,15 +76,28 @@ function readNumber(headers: Headers, name: string): number | null {
 }
 
 /**
- * The size to download.
+ * The size to download. `original`, and it must stay `original`.
  *
- * `large2x` is a 1880px-wide re-encode, which is plenty for a corpus and
- * a fraction of the original. NOT `original`: those run to 20MB+ and
- * resolution is one of the eight axes, so downloading a 6000px file only
- * to have every image score 5 on resolution teaches the scorer nothing
- * that a smaller file would not.
+ * DO NOT "optimise" this back to large2x to save bandwidth or disk.
+ * large2x is not a smaller copy of the photograph, it is a FIXED-SIZE
+ * re-encode: measured over a real 150-image pull, every single image came
+ * back exactly 1300px tall and 98 of them were the identical 867x1300.
+ * The whole corpus lands in 0.95-1.35MP.
+ *
+ * `resolution` is one of the eight axes. A corpus with no resolution
+ * variance cannot train or test it, the collapse is baked in at
+ * collection time where no later analysis can undo it, and nothing about
+ * the resulting run looks wrong. Originals measured over 320 photos:
+ * p10 8.9MP, median 22.4MP, p90 30.1MP.
+ *
+ * That mistake shipped in 8ae9d33 and was caught by the dry run that
+ * followed. You can always derive a small image from a large one; you
+ * can never recover the other direction.
+ *
+ * The 50MP pre-filter in collect-corpus.ts exists because of this choice
+ * and is not redundant caching logic - see MAX_INPUT_PIXELS there.
  */
-export const PREFERRED_SIZES: readonly string[] = ['large2x', 'large', 'original'];
+export const PREFERRED_SIZES: readonly string[] = ['original', 'large2x', 'large'];
 
 export function pickSource(photo: PexelsPhoto): string | null {
   for (const size of PREFERRED_SIZES) {

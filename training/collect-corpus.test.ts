@@ -10,7 +10,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * the client is handed a fetch.
  */
 const extractAll = vi.hoisted(() => vi.fn());
-vi.mock('@pps/features', () => ({ extractAll }));
+// MAX_INPUT_PIXELS is re-exported at its real value: the pre-filter is
+// part of what these tests cover, so mocking it to something convenient
+// would test a ceiling the program does not have.
+vi.mock('@pps/features', () => ({ extractAll, MAX_INPUT_PIXELS: 50_000_000 }));
 
 const { collect, parseArgs, renderSummary } = await import('./collect-corpus.js');
 const { PexelsClient } = await import('./pexels.js');
@@ -332,6 +335,95 @@ describe('collect', () => {
     expect(summary.failures[0]?.reason).toMatch(/extractorVersion/);
   });
 
+  it('never downloads a candidate the API says is over the 50MP ceiling', async () => {
+    const dataDir = tempData();
+    const downloadedIds: number[] = [];
+    const fetchImpl = async (url: string): Promise<Response> => {
+      if (url.startsWith('https://api.pexels.com')) {
+        const page = Number(/[?&]page=(\d+)/.exec(url)?.[1] ?? '1');
+        if (page > 1) return new Response(JSON.stringify({ photos: [] }), { status: 200 });
+        return new Response(
+          JSON.stringify({
+            photos: [
+              // 101.9MP, the real maximum seen in a 320-photo sample.
+              { ...photo(1), width: 8244, height: 12366 },
+              { ...photo(2), width: 4000, height: 6000 },
+              { ...photo(3), width: 3000, height: 4000 },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      downloadedIds.push(Number(/photos\/(\d+)\//.exec(url)?.[1]));
+      return new Response(new TextEncoder().encode(`bytes-${downloadedIds.length}`), { status: 200 });
+    };
+
+    const summary = await collect(new PexelsClient('k', fetchImpl), {
+      total: 2,
+      dataDir,
+      queries: [{ query: 'professional headshot', variant: 'good' }],
+      log: () => {},
+    });
+
+    expect(summary.skippedOversize).toBe(1);
+    // The point of the pre-filter: the bytes were never fetched.
+    expect(downloadedIds).not.toContain(1);
+    expect(summary.collected).toBe(2);
+    expect(summary.failures).toEqual([]);
+  });
+
+  it('measures the resolution spread from what decoded, not what the API claimed', async () => {
+    const dataDir = tempData();
+    const sizes = [
+      [3000, 4000],
+      [2000, 3000],
+      [1500, 2000],
+      [4000, 6000],
+    ];
+    let call = 0;
+    extractAll.mockImplementation(async () => {
+      const [w, h] = sizes[call % sizes.length] ?? [1, 1];
+      call += 1;
+      return features(w, h);
+    });
+
+    const summary = await collect(new PexelsClient('k', fakeApi().fetchImpl), {
+      total: 4,
+      dataDir,
+      queries: QUERIES_SMALL,
+      log: () => {},
+    });
+
+    expect(summary.resolution?.n).toBe(4);
+    expect(summary.resolution?.distinctSizes).toBe(4);
+    expect(summary.resolution?.minMp).toBeCloseTo(3, 6);
+    expect(summary.resolution?.maxMp).toBeCloseTo(24, 6);
+  });
+
+  it('carries the spread across a resume, counting rows from the earlier run', async () => {
+    const dataDir = tempData();
+    extractAll.mockImplementation(async () => features(2000, 3000));
+    await collect(new PexelsClient('k', fakeApi().fetchImpl), {
+      total: 2,
+      dataDir,
+      queries: QUERIES_SMALL,
+      log: () => {},
+    });
+
+    extractAll.mockImplementation(async () => features(4000, 6000));
+    const second = await collect(new PexelsClient('k', fakeApi().fetchImpl), {
+      total: 6,
+      dataDir,
+      queries: QUERIES_SMALL,
+      log: () => {},
+    });
+
+    // Two 6MP from the first run plus four 24MP from this one.
+    expect(second.resolution?.n).toBe(6);
+    expect(second.resolution?.minMp).toBeCloseTo(6, 6);
+    expect(second.resolution?.maxMp).toBeCloseTo(24, 6);
+  });
+
   it('reports a failed download and does not count it', async () => {
     const dataDir = tempData();
     let downloads = 0;
@@ -450,6 +542,16 @@ describe('renderSummary', () => {
       { query: 'professional headshot', variant: 'good' as const, target: 12, have: 12, taken: 2 },
       { query: 'car selfie', variant: 'bad' as const, target: 8, have: 3, taken: 1 },
     ],
+    skippedOversize: 4,
+    resolution: {
+      n: 15,
+      minMp: 5.02,
+      p10Mp: 8.91,
+      medianMp: 22.41,
+      p90Mp: 30.06,
+      maxMp: 47.5,
+      distinctSizes: 14,
+    },
     quota: { limit: 200, remaining: 173, reset: 1774000000, resetInSeconds: 2400 },
     stoppedEarly: null,
   };
@@ -474,6 +576,53 @@ describe('renderSummary', () => {
     const text = renderSummary(sample, 150);
     expect(text).toMatch(/good\s+80\.0%\s+\(planned 30\.0%\)/);
     expect(text).toMatch(/bad\s+20\.0%\s+\(planned 30\.0%\)/);
+  });
+
+  it('prints the resolution spread as megapixels, every run', () => {
+    const text = renderSummary(sample, 150);
+    expect(text).toMatch(/min\s+5\.02 MP/);
+    expect(text).toMatch(/p10\s+8\.91 MP/);
+    expect(text).toMatch(/median\s+22\.41 MP/);
+    expect(text).toMatch(/p90\s+30\.06 MP/);
+    expect(text).toMatch(/max\s+47\.50 MP/);
+    expect(text).toMatch(/distinct sizes 14/);
+    // Healthy spread: no warning.
+    expect(text).not.toMatch(/too little spread/);
+  });
+
+  it('flags a corpus where every image is the same size', () => {
+    const text = renderSummary(
+      {
+        ...sample,
+        resolution: { n: 150, minMp: 1.13, p10Mp: 1.13, medianMp: 1.13, p90Mp: 1.13, maxMp: 1.13, distinctSizes: 1 },
+      },
+      150,
+    );
+    expect(text).toMatch(/every image is the same size/);
+  });
+
+  it('flags a spread too narrow to train the resolution axis', () => {
+    // The large2x corpus: 0.95-1.35MP, thirty distinct sizes, and still
+    // useless - distinctSizes alone would have called this healthy.
+    const text = renderSummary(
+      {
+        ...sample,
+        resolution: { n: 150, minMp: 0.95, p10Mp: 1.04, medianMp: 1.13, p90Mp: 1.27, maxMp: 1.35, distinctSizes: 30 },
+      },
+      150,
+    );
+    expect(text).toMatch(/only 1\.42x the smallest/);
+    expect(text).toMatch(/train or test the resolution axis/);
+  });
+
+  it('counts the oversized candidates it never downloaded', () => {
+    expect(renderSummary(sample, 150)).toMatch(/over the 50MP ceiling\s+4\s+\(never downloaded\)/);
+  });
+
+  it('says so when nothing was collected at all', () => {
+    expect(renderSummary({ ...sample, resolution: null }, 150)).toMatch(
+      /insufficient data for the resolution spread/,
+    );
   });
 
   it('prints the rate-limit headroom from the last response', () => {

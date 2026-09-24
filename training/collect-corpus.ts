@@ -23,7 +23,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { extractAll } from '@pps/features';
+import { extractAll, MAX_INPUT_PIXELS } from '@pps/features';
 import { ComputedFeatures } from '@pps/schema';
 
 import {
@@ -77,6 +77,25 @@ export interface QueryOutcome {
   readonly taken: number;
 }
 
+/**
+ * The resolution actually collected, in megapixels.
+ *
+ * Printed every run, not just when something looks wrong. `resolution`
+ * is a scored axis, so a corpus with no spread in it cannot train or
+ * test that axis - and the failure is silent, which is why the numbers
+ * go in the report rather than waiting for someone to ask.
+ */
+export interface ResolutionSpread {
+  readonly n: number;
+  readonly minMp: number;
+  readonly p10Mp: number;
+  readonly medianMp: number;
+  readonly p90Mp: number;
+  readonly maxMp: number;
+  /** Distinct (width x height) pairs. One means a fixed-size re-encode. */
+  readonly distinctSizes: number;
+}
+
 /** The rate-limit position as of the last API response. */
 export interface QuotaReport {
   readonly limit: number | null;
@@ -91,8 +110,35 @@ export interface CollectSummary {
   readonly skippedDuplicateHash: number;
   readonly failures: readonly Failure[];
   readonly outcomes: readonly QueryOutcome[];
+  readonly resolution: ResolutionSpread | null;
+  /** Candidates skipped unread because the API said they were too big. */
+  readonly skippedOversize: number;
   readonly quota: QuotaReport;
   readonly stoppedEarly: string | null;
+}
+
+/** Nearest-rank percentile over a sorted array. */
+function percentile(sorted: readonly number[], q: number): number {
+  if (sorted.length === 0) return 0;
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1));
+  return sorted[index] ?? 0;
+}
+
+export function summariseResolution(
+  pixels: readonly number[],
+  sizes: ReadonlySet<string>,
+): ResolutionSpread | null {
+  if (pixels.length === 0) return null;
+  const mp = [...pixels].map((p) => p / 1_000_000).sort((a, b) => a - b);
+  return {
+    n: mp.length,
+    minMp: mp[0] ?? 0,
+    p10Mp: percentile(mp, 0.1),
+    medianMp: percentile(mp, 0.5),
+    p90Mp: percentile(mp, 0.9),
+    maxMp: mp[mp.length - 1] ?? 0,
+    distinctSizes: sizes.size,
+  };
 }
 
 /** Non-finite numbers are what a broken decode looks like downstream: the
@@ -143,7 +189,16 @@ export async function collect(client: PexelsClient, options: CollectOptions = {}
   let collected = 0;
   let skippedAlreadyHave = 0;
   let skippedDuplicateHash = 0;
+  let skippedOversize = 0;
   let stoppedEarly: string | null = null;
+
+  // Measured on what actually decoded, not on what the API claimed.
+  const measuredPixels: number[] = [];
+  const measuredSizes = new Set<string>();
+  for (const prior of existing.rows) {
+    measuredPixels.push(prior.width * prior.height);
+    measuredSizes.add(`${prior.width}x${prior.height}`);
+  }
 
   if (!options.dryRun) {
     mkdirSync(imageDir, { recursive: true });
@@ -177,6 +232,13 @@ export async function collect(client: PexelsClient, options: CollectOptions = {}
         onAlreadyHave: () => {
           skippedAlreadyHave += 1;
         },
+        onOversize: () => {
+          skippedOversize += 1;
+        },
+        onMeasured: (width: number, height: number) => {
+          measuredPixels.push(width * height);
+          measuredSizes.add(`${width}x${height}`);
+        },
       });
       collected += taken;
       perQuery.set(row.query, already + taken);
@@ -208,8 +270,10 @@ export async function collect(client: PexelsClient, options: CollectOptions = {}
     collected,
     skippedAlreadyHave,
     skippedDuplicateHash,
+    skippedOversize,
     failures,
     outcomes,
+    resolution: summariseResolution(measuredPixels, measuredSizes),
     quota: { ...client.quota, resetInSeconds: client.resetInSeconds },
     stoppedEarly,
   };
@@ -226,6 +290,8 @@ interface QueryContext {
   readonly log: (line: string) => void;
   readonly onDuplicate: () => void;
   readonly onAlreadyHave: () => void;
+  readonly onOversize: () => void;
+  readonly onMeasured: (width: number, height: number) => void;
 }
 
 async function collectForQuery(
@@ -253,6 +319,17 @@ async function collectForQuery(
       if (source === null) return false;
       if (ctx.haveUrls.has(photo.url) || ctx.haveUrls.has(source)) {
         ctx.onAlreadyHave();
+        return false;
+      }
+      // Since PREFERRED_SIZES takes the original, some of these are
+      // enormous - 1.6% of a 320-photo sample was over the ceiling, up
+      // to 101.9MP. The search response already carries the dimensions,
+      // so there is no reason to spend an 80MB download discovering that
+      // our own decoder will refuse the file. NOT redundant with the
+      // check inside prepareImage: that one protects the app, this one
+      // protects the bandwidth, and neither can do the other's job.
+      if (photo.width * photo.height > MAX_INPUT_PIXELS) {
+        ctx.onOversize();
         return false;
       }
       return true;
@@ -377,6 +454,7 @@ async function ingest(
   ctx.haveHashes.add(sha256);
   ctx.haveUrls.add(photo.url);
   ctx.haveUrls.add(source);
+  ctx.onMeasured(features.width, features.height);
   ctx.log(`  + ${sha256.slice(0, 12)} ${features.width}x${features.height} ${photo.photographer}`);
   return true;
 }
@@ -454,6 +532,43 @@ function renderSpread(summary: CollectSummary): string[] {
   return lines;
 }
 
+/**
+ * Printed every run. A collapsed resolution axis is invisible in every
+ * other number the report prints - the targets are met, nothing fails,
+ * and the corpus is quietly untrainable on one of its eight axes.
+ */
+function renderResolution(spread: ResolutionSpread | null): string[] {
+  if (spread === null) {
+    return ['', 'resolution', '----------', '  insufficient data for the resolution spread (nothing collected)'];
+  }
+  const mp = (value: number): string => `${value.toFixed(2).padStart(7)} MP`;
+  const lines = [
+    '',
+    'resolution  (as measured after decode, not as the API claimed)',
+    '--------------------------------------------------------------',
+    `  n              ${spread.n}`,
+    `  min            ${mp(spread.minMp)}`,
+    `  p10            ${mp(spread.p10Mp)}`,
+    `  median         ${mp(spread.medianMp)}`,
+    `  p90            ${mp(spread.p90Mp)}`,
+    `  max            ${mp(spread.maxMp)}`,
+    `  distinct sizes ${spread.distinctSizes}`,
+  ];
+
+  // A near-constant axis cannot be trained or tested, and the cause is
+  // almost always a fixed-size CDN re-encode rather than a coincidence.
+  const ratio = spread.minMp === 0 ? Infinity : spread.maxMp / spread.minMp;
+  if (spread.distinctSizes <= 1) {
+    lines.push('  ! every image is the same size - this is a fixed-size re-encode, not photographs');
+  } else if (ratio < 2) {
+    lines.push(
+      `  ! the largest image is only ${ratio.toFixed(2)}x the smallest - too little spread to`,
+      '    train or test the resolution axis. Check which src size is being downloaded.',
+    );
+  }
+  return lines;
+}
+
 function renderQuota(quota: QuotaReport): string[] {
   if (quota.limit === null && quota.remaining === null) {
     return ['', 'rate limit', '----------', '  no API response carried rate-limit headers'];
@@ -480,6 +595,7 @@ export function renderSummary(summary: CollectSummary, total: number): string {
     // one of them.
     `  already seen             ${summary.skippedAlreadyHave}`,
     `  duplicate photographs    ${summary.skippedDuplicateHash}`,
+    `  over the ${MAX_INPUT_PIXELS / 1_000_000}MP ceiling    ${summary.skippedOversize}  (never downloaded)`,
     `  failures                 ${summary.failures.length}`,
   ];
 
@@ -505,6 +621,7 @@ export function renderSummary(summary: CollectSummary, total: number): string {
     }
   }
 
+  lines.push(...renderResolution(summary.resolution));
   lines.push(...renderQuota(summary.quota));
 
   if (summary.stoppedEarly !== null) {
