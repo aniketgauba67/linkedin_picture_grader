@@ -1,5 +1,5 @@
 import type { ComputedFeatures } from '@pps/schema';
-import { ComputedFeatures as ComputedFeaturesSchema } from '@pps/schema';
+import { ComputedFeatures as ComputedFeaturesSchema, EXTRACTOR_VERSION } from '@pps/schema';
 import type { LumaPlane, RgbPlane } from './luma.js';
 import { cropPlane } from './luma.js';
 import { laplacianVariance } from './sharpness.js';
@@ -181,6 +181,7 @@ export async function extractFeatures(image: Buffer): Promise<ComputedFeatures> 
     primaryFaceConfidence: face === null ? null : clamp(face.box.confidence, 0, 1),
     secondLargestFaceRatio: secondLargestFaceRatio(faces, plane.width, plane.height),
 
+    extractorVersion: EXTRACTOR_VERSION,
     isGrayscale: source.isGrayscale,
     aspectExtreme: source.aspectExtreme,
     sourceFormat: source.sourceFormat,

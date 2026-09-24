@@ -20,6 +20,7 @@ const result: ScoreResult = {
   fixes: [{ axis: 'framing', severity: 'high', message: 'Move closer.' }],
   confidence: 0.95,
   weightsVersion: '2026-09-24.1',
+  coverage: 'full',
 };
 
 const scored: AnalysisOutcome = { status: 'scored', result };

@@ -5,7 +5,8 @@ import {
   NUMERIC_FEATURE_FIELDS,
   assertFeaturesUsable,
 } from '@pps/schema';
-import { scoreComputedAxes, sharpnessBasis, sharpnessScore } from '@pps/scoring';
+import { WEIGHTS_V1, computeComputedAxes, sharpnessBasis, sharpnessScore } from '@pps/scoring';
+import type { ValidatedPixelFeatures } from '@pps/scoring';
 import { ANALYSIS_EDGE, extractFeatures, toLumaPlane } from './extract.js';
 import { ImageDecodeError } from './errors.js';
 import type { FaceObservation } from './face.js';
@@ -110,7 +111,7 @@ describe('extractFeatures', () => {
     expect(features.sharpnessEyeRegion).toBeNull();
     expect(features.eyeRegionMeasured).toBe(false);
     expect(features.primaryFaceConfidence).toBeNull();
-    expect(scoreComputedAxes(features).framing).toBe(1);
+    expect(computeComputedAxes(features as unknown as ValidatedPixelFeatures, WEIGHTS_V1).framing).toBe(1);
   });
 
   it('measures eye-region sharpness only once a face locates the eyes', async () => {
@@ -298,7 +299,7 @@ describe('sharpness basis', () => {
     // The frame is full of noise and would score 5 on the fallback.
     expect(features.sharpnessLaplacian).toBeGreaterThan(700);
     expect(sharpnessBasis(features)).toBe('eyeRegion');
-    expect(sharpnessScore(features)).toBe(1);
+    expect(sharpnessScore(features, WEIGHTS_V1)).toBe(1);
   });
 
   it('falls back to the frame only when the eye band is genuinely unmeasurable', async () => {
@@ -306,7 +307,7 @@ describe('sharpness basis', () => {
     expect(features.eyeRegionMeasured).toBe(false);
     expect(features.sharpnessEyeRegion).toBeNull();
     expect(sharpnessBasis(features)).toBe('frame');
-    expect(sharpnessScore(features)).toBeGreaterThan(1);
+    expect(sharpnessScore(features, WEIGHTS_V1)).toBeGreaterThan(1);
   });
 
   it('reports unmeasurable when the eye band falls outside the frame', async () => {

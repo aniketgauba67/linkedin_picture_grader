@@ -36,33 +36,42 @@ export {
 } from './weights.js';
 export type { AxisWeights, Context } from './weights.js';
 
-export {
-  JPEG_QUALITY_FLOOR,
-  PIXEL_THRESHOLDS,
-  SHARPNESS_THRESHOLDS,
-  faceCenterOffset,
-  framingScore,
-  lightingScore,
-  resolutionScore,
-  scoreAgainstThresholds,
-  scoreComputedAxes,
-  sharpnessBasis,
-  sharpnessScore,
-} from './pixel-axes.js';
-export type { PixelFeatures } from './pixel-axes.js';
+export { faceCenterOffset } from './pixel-axes.js';
+export type { PixelFeatures, ValidatedPixelFeatures } from './pixel-axes.js';
 
-export { FIX_MESSAGES, MAX_FIXES, SEVERITY_THRESHOLDS, severityFor } from './fixes.js';
+export { MAX_FIXES, SEVERITY_THRESHOLDS, buildFixes, severityFor } from './fixes.js';
 export type { Fix, FixSeverity } from './fixes.js';
 
 export { computeConfidence, subjectDisagreement } from './confidence.js';
 export type { ConfidenceContext, ConfidenceInputs } from './confidence.js';
 
+export { KnotError, applyIsotonic, assertKnots } from './isotonic.js';
+export type { Knot } from './isotonic.js';
+
+export { WEIGHTS_V1 } from './weights/v1.js';
+export type { AxisMaps, Weights } from './weights/v1.js';
+
 export {
+  bandPenalty,
+  computeAxisScores,
+  computeComputedAxes,
+  framingRaw,
+  framingScore,
+  lightingScore,
+  resolutionScore,
+  sharpnessBasis,
+  sharpnessScore,
+} from './compute.js';
+export type { ComputedAxisScores, JudgedScores } from './compute.js';
+
+export {
+  WeightsVersionError,
   axisBreakdown,
-  buildFixes,
+  composeScore,
   meanToComposite,
-  roundTo,
-  scorePhoto,
+  score,
   weightedMean,
-} from './composite.js';
-export type { AxisBreakdown, ScoreOptions, ScoreResultShape } from './composite.js';
+} from './score.js';
+export type { AxisBreakdown, Coverage, ScoreInput, ScoreResultShape } from './score.js';
+
+export { roundTo } from './composite.js';

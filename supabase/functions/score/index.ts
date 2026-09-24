@@ -3,10 +3,9 @@
 import {
   computeConfidence,
   isContext,
-  scoreComputedAxes,
-  scorePhoto,
-  type AxisScores,
+  score,
   type PixelFeatures,
+  type ValidatedPixelFeatures,
 } from '@pps/scoring';
 
 /**
@@ -114,6 +113,14 @@ function readNullableFeature(vector: Record<string, unknown>, field: string): nu
   return value;
 }
 
+function readString(vector: Record<string, unknown>, field: string): string {
+  const value = vector[field];
+  if (typeof value !== 'string' || value === '') {
+    throw new TypeError(`Cached feature "${field}" is not a non-empty string`);
+  }
+  return value;
+}
+
 function readFlag(vector: Record<string, unknown>, field: string): boolean {
   const value = vector[field];
   if (typeof value !== 'boolean') {
@@ -140,6 +147,8 @@ function readFeatures(vector: Record<string, unknown>): PixelFeatures & {
     faceCenterOffsetX: readFeature(vector, 'faceCenterOffsetX'),
     faceCenterOffsetY: readFeature(vector, 'faceCenterOffsetY'),
     faceCount: readFeature(vector, 'faceCount'),
+    exposureMean: readFeature(vector, 'exposureMean'),
+    extractorVersion: readString(vector, 'extractorVersion'),
     yaw: readFeature(vector, 'yaw'),
     // Null means unmeasurable, so the off-axis penalty is computed over
     // the pose components that exist. Reading it as 0 would make the
@@ -225,13 +234,6 @@ Deno.serve(async (request: Request): Promise<Response> => {
   }
 
   const judged = verdict.assessment.assessment;
-  const axes: AxisScores = {
-    ...scoreComputedAxes(computed),
-    background: judged.background.score,
-    attire: judged.attire.score,
-    expression: judged.expression.score,
-    solo: judged.solo.score,
-  };
 
   // `solo` is judged by the model and `faceCount` is measured. They are
   // never merged into a score; a contradiction between them just means
@@ -240,8 +242,20 @@ Deno.serve(async (request: Request): Promise<Response> => {
     soloScore: judged.solo.score,
   });
 
+  // readFeatures has already checked every number is finite and every
+  // flag is a boolean, which is what the brand asserts.
   return json({
     status: 'scored',
-    result: scorePhoto(axes, rawContext, { confidence }),
+    result: score({
+      features: computed as ValidatedPixelFeatures,
+      judged: {
+        background: judged.background.score,
+        attire: judged.attire.score,
+        expression: judged.expression.score,
+        solo: judged.solo.score,
+      },
+      context: rawContext,
+      confidence,
+    }),
   });
 });

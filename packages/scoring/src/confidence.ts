@@ -1,5 +1,6 @@
 import type { PixelFeatures } from './pixel-axes.js';
-import { JPEG_QUALITY_FLOOR, faceCenterOffset } from './pixel-axes.js';
+import { faceCenterOffset } from './pixel-axes.js';
+import { WEIGHTS_V1 } from './weights/v1.js';
 import { roundTo } from './composite.js';
 
 /**
@@ -78,7 +79,7 @@ export function computeConfidence(
     confidence -= 0.1;
   }
 
-  if (features.jpegQualityEstimate < JPEG_QUALITY_FLOOR) {
+  if (features.jpegQualityEstimate < WEIGHTS_V1.jpegQualityFloor) {
     confidence -= 0.15;
   }
 

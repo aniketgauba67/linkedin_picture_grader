@@ -37,6 +37,7 @@ const features: ComputedFeatures = {
   isGrayscale: false,
   aspectExtreme: false,
   sourceFormat: 'jpeg',
+  extractorVersion: 'v5',
 };
 
 const assessed: RubricResponse = {
@@ -66,6 +67,7 @@ const scoreResult: ScoreResult = {
   fixes: [],
   confidence: 0.95,
   weightsVersion: '2026-09-24.1',
+  coverage: 'full',
 };
 
 const photoRow = { id: 'photo-1', storage_path: 'anon/a.jpg', sha256: 'hash-1' };

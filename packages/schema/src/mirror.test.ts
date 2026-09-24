@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Fix as ScoringFix, PixelFeatures, ScoreResultShape } from '@pps/scoring';
-import { CONTEXTS, computeConfidence, scoreComputedAxes, scorePhoto } from '@pps/scoring';
+import { CONTEXTS, computeConfidence, score } from '@pps/scoring';
 import type { ComputedFeatures } from './features.js';
 import type { Fix, ScoreResult } from './result.js';
 import { ScoreResult as ScoreResultSchema } from './result.js';
 import { AxisScores } from './axes.js';
+import { assertFeaturesUsable } from './features.js';
 
 /**
  * `@pps/scoring` keeps an empty `dependencies` object so it can run in
@@ -21,6 +22,8 @@ const _fixesMatch: Fix = {} as ScoringFix;
 const _fixesMatchBack: ScoringFix = {} as Fix;
 const _resultsMatch: ScoreResult = {} as ScoreResultShape;
 const _resultsMatchBack: ScoreResultShape = {} as ScoreResult;
+void _resultsMatch;
+void _resultsMatchBack;
 void _featuresAreAssignable;
 void _fixesMatch;
 void _fixesMatchBack;
@@ -54,47 +57,71 @@ const features: ComputedFeatures = {
   isGrayscale: false,
   aspectExtreme: false,
   sourceFormat: 'jpeg',
+  extractorVersion: 'v5',
 };
 
 const assessed = { background: 4, attire: 3, expression: 4, solo: 5 };
 
 describe('scoring mirror', () => {
-  it.each(CONTEXTS)('scorePhoto output parses as a ScoreResult in %s', (context) => {
-    const axes = AxisScores.parse({ ...scoreComputedAxes(features), ...assessed });
-    const result = scorePhoto(axes, context, { confidence: computeConfidence(features) });
+  it.each(CONTEXTS)('score() output parses as a ScoreResult in %s', (context) => {
+    assertFeaturesUsable(features);
+    const result = score({
+      features,
+      judged: assessed,
+      context,
+      confidence: computeConfidence({ ...features, yaw: features.yaw, pitch: features.pitch }),
+    });
     expect(() => ScoreResultSchema.parse(result)).not.toThrow();
   });
 
   it('emits axis scores the AxisScores schema accepts', () => {
-    expect(() => AxisScores.parse({ ...scoreComputedAxes(features), ...assessed })).not.toThrow();
+    assertFeaturesUsable(features);
+    const result = score({ features, judged: assessed });
+    expect(() => AxisScores.parse(result.axes)).not.toThrow();
   });
 
-  it('emits a confidence inside the schema bounds even for a faceless image', () => {
+  it('marks the degraded path partial and still parses', () => {
+    assertFeaturesUsable(features);
+    const result = score({ features });
+    expect(result.coverage).toBe('partial');
+    // Only four axes contributed, so the full AxisScores shape does not
+    // apply - but the ScoreResult schema must still accept the result.
+    expect(() => ScoreResultSchema.parse(result)).not.toThrow();
+  });
+
+  it('emits a confidence inside the schema bounds for a faceless image', () => {
     const faceless: ComputedFeatures = {
       ...features,
       faceCount: 0,
       faceAreaRatio: 0,
       sharpnessEyeRegion: null,
       eyeRegionMeasured: false,
+      primaryFaceConfidence: null,
     };
-    const axes = AxisScores.parse({ ...scoreComputedAxes(faceless), ...assessed });
-    const result = scorePhoto(axes, 'startup', { confidence: computeConfidence(faceless) });
+    assertFeaturesUsable(faceless);
+    const result = score({
+      features: faceless,
+      judged: assessed,
+      confidence: computeConfidence({ ...faceless, yaw: faceless.yaw, pitch: faceless.pitch }),
+    });
     expect(ScoreResultSchema.parse(result).confidence).toBeLessThan(1);
   });
 
   it('emits fixes the Fix schema accepts, including the worst case', () => {
-    const worst = AxisScores.parse({
-      sharpness: 1,
-      lighting: 1,
-      resolution: 1,
-      framing: 1,
-      background: 1,
-      attire: 1,
-      expression: 1,
-      solo: 1,
-    });
-    const result = ScoreResultSchema.parse(scorePhoto(worst, 'corporate'));
+    const worst: ComputedFeatures = {
+      ...features,
+      sharpnessLaplacian: 1,
+      sharpnessEyeRegion: 1,
+      dynamicRange: 5,
+      width: 200,
+      height: 200,
+      faceAreaRatio: 0.01,
+    };
+    assertFeaturesUsable(worst);
+    const result = ScoreResultSchema.parse(
+      score({ features: worst, judged: { background: 1, attire: 1, expression: 1, solo: 1 } }),
+    );
     expect(result.fixes.length).toBeGreaterThan(0);
-    expect(result.score).toBe(1);
+    expect(result.score).toBeLessThan(4);
   });
 });

@@ -16,6 +16,8 @@ const certain: ConfidenceInputs = {
   faceCenterOffsetX: 0.01,
   faceCenterOffsetY: -0.03,
   faceCount: 1,
+  exposureMean: 128,
+  extractorVersion: 'v5',
   yaw: 2,
   pitch: -3,
 };

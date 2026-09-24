@@ -5,7 +5,7 @@ import { z } from 'zod';
  * column next to the cached vector, not as a field of the vector, so an
  * older row is detected and re-extracted rather than silently mis-scored.
  */
-export const FEATURE_VECTOR_VERSION = 4;
+export const FEATURE_VECTOR_VERSION = 5;
 
 /**
  * The cache key for an extraction, derived from the version rather than
@@ -146,6 +146,16 @@ export const ComputedFeatures = z.object({
    * JPEG that heic-convert produced from it.
    */
   sourceFormat: z.string().min(1).max(32),
+  /**
+   * Which extractor produced this vector.
+   *
+   * Carried IN the vector, not only in the database column beside it, so
+   * a vector in flight is self-describing. `score()` refuses to run when
+   * this disagrees with the weights' compatibleExtractorVersion: the
+   * numbers would mean something different from what the map was fitted
+   * against, and the result would be confidently wrong.
+   */
+  extractorVersion: z.string().min(1).max(32),
 });
 
 export type ComputedFeatures = z.infer<typeof ComputedFeatures>;
@@ -243,7 +253,24 @@ export const BOOLEAN_FEATURE_FIELDS = [
   'aspectExtreme',
 ] as const;
 
-export const STRING_FEATURE_FIELDS = ['sourceFormat'] as const;
+export const STRING_FEATURE_FIELDS = ['sourceFormat', 'extractorVersion'] as const;
+
+/**
+ * A feature vector that has been through `assertFeaturesUsable`.
+ *
+ * The brand exists so the guard is a COMPILE-TIME PROOF rather than a
+ * convention: `score()` in @pps/scoring takes this type, and the only
+ * way to obtain one is to run the assertion. That package keeps an empty
+ * dependencies object and cannot import zod, so it mirrors this brand
+ * structurally - a string literal rather than a unique symbol, which is
+ * exactly what makes the mirror possible.
+ *
+ * Duplicating the validation inside @pps/scoring would be the other way
+ * to solve this, and would give us two implementations of one contract.
+ */
+export type ValidatedFeatures = ComputedFeatures & {
+  readonly __validated: 'assertFeaturesUsable';
+};
 
 export const FEATURE_FIELDS = [
   ...NUMERIC_FEATURE_FIELDS,
@@ -260,7 +287,7 @@ export const FEATURE_FIELDS = [
  * offending field rather than a zod issue tree, and it is what the Edge
  * Function's 2s CPU budget can afford on every request.
  */
-export function assertFeaturesUsable(f: ComputedFeatures): void {
+export function assertFeaturesUsable(f: ComputedFeatures): asserts f is ValidatedFeatures {
   if (f === null || typeof f !== 'object') {
     throw new FeatureError('(root)', f, 'expected an object of computed features');
   }

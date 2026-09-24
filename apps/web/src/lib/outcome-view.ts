@@ -64,14 +64,19 @@ export function toView(outcome: AnalysisOutcome): OutcomeView {
   });
 }
 
+/**
+ * Only the axes that actually contributed. On the degraded path the
+ * judged four are absent, and showing them as blanks would imply we
+ * looked and found nothing rather than that we did not look.
+ */
 export function axisRows(result: ScoreResult): readonly AxisRow[] {
-  return (Object.keys(result.axes) as AxisName[])
-    .map((axis) => ({
-      axis,
-      score: result.axes[axis],
-      description: AXIS_DESCRIPTIONS[axis],
-    }))
-    .sort((a, b) => a.score - b.score);
+  const rows: AxisRow[] = [];
+  for (const axis of Object.keys(result.axes) as AxisName[]) {
+    const score = result.axes[axis];
+    if (score === undefined) continue;
+    rows.push({ axis, score, description: AXIS_DESCRIPTIONS[axis] });
+  }
+  return rows.sort((a, b) => a.score - b.score);
 }
 
 function caveatFor(result: ScoreResult): string | null {

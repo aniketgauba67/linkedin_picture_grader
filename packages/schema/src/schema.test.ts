@@ -55,6 +55,7 @@ const usable: ComputedFeatures = {
   isGrayscale: false,
   aspectExtreme: false,
   sourceFormat: 'jpeg',
+  extractorVersion: 'v5',
 };
 
 const validScores: AxisScores = {
@@ -498,6 +499,7 @@ describe('ScoreResult', () => {
     fixes: [{ axis: 'framing', severity: 'medium', message: 'Move closer.' }],
     confidence: 0.92,
     weightsVersion: '2026-09-24.1',
+    coverage: 'full',
   };
 
   it('accepts a complete result', () => {
@@ -538,6 +540,7 @@ describe('AnalysisOutcome', () => {
       fixes: [],
       confidence: 1,
       weightsVersion: '2026-09-24.1',
+      coverage: 'full',
     },
   };
 

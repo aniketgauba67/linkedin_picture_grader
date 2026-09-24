@@ -8,6 +8,7 @@
  */
 export * from './axes.js';
 export * from './features.js';
+export { WeightsVersionError } from './errors.js';
 export * from './assessment.js';
 export * from './result.js';
 export * from './outcome.js';
