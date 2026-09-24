@@ -191,7 +191,7 @@ Match the anchor text literally. Do not interpolate between levels.
 
 TIE-BREAK: when the evidence sits between two levels, assign the LOWER one.
 
-CONTEXT vs CLUTTER: a background element that signals the subject's professional setting - a flag, an institutional backdrop, a bookshelf, a lab or workshop - is staging, not clutter, and belongs at 4. Penalize a background only when it competes with the face for attention or reads as personal or recreational. When unsure which, ask whether a stranger would look at it before looking at the face.
+CONTEXT vs CLUTTER: a background element that reads as staged or institutional - a flag, an institutional backdrop, a bookshelf, a lab or workshop - is staging, not clutter, and belongs at 4. Penalize a background only when it competes with the face for attention or reads as personal or recreational. When unsure which, ask whether a stranger would look at it before looking at the face.
 
 Do not reason about whether a background element relates to the subject's profession - that would require inferring what they do. Judge only whether it competes for attention. A staged backdrop is a 4 because it is staged and recedes, not because of what it depicts.
 
@@ -201,10 +201,10 @@ EVIDENCE DESCRIBES THE PHOTOGRAPH, NEVER THE PERSON. "Eyes directed at camera" i
 
 ### BACKGROUND — what is behind the subject, and whether it competes for attention
 
-1 — another person's face is visible, OR legible text, signage or logos, OR a location distinctive enough that the eye goes there first
-2 — busy: three or more distinct objects describable behind the subject
-3 — a recognizable setting, but nothing competing with the face
-4 — near-uniform: plain wall, open sky, or clean bokeh, with at most one minor element
+1 — another person's face is visible, OR a clearly personal or recreational setting: bedroom, bar, party, vehicle interior, holiday scene, gym
+2 — busy: three or more distinct objects describable behind the subject, OR legible text or signage that draws the eye
+3 — a recognizable setting with several elements, but nothing competing with the face for attention
+4 — near-uniform, OR a deliberate professional backdrop — flag, institutional banner, studio set, office bokeh — that reads as staged rather than incidental
 5 — fully uniform: a solid colour or smooth gradient, nothing identifiable
 
 ### ATTIRE — FORMALITY LEVEL, not quality
