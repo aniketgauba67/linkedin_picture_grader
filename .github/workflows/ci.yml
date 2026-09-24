@@ -60,6 +60,14 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+          # The cache key must depend on .npmrc, not just the lockfile.
+          # Install config changes what postinstall puts in the store,
+          # and a store cached before a config change is poisoned -
+          # exactly how a restored store kept reinstating the CUDA
+          # providers after they had been switched off.
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            .npmrc
 
       # --frozen-lockfile is the point of this step, not a detail. It
       # fails when pnpm-lock.yaml disagrees with any package.json, which
