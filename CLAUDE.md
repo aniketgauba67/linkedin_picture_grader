@@ -53,3 +53,39 @@ library. Pure functions only.
 - No `any`. No non-null assertions without a comment explaining why.
 - Every module gets a vitest file alongside it.
 - data/ and models/ are gitignored. Never commit images.
+## Deployment gotchas
+
+Every item here was found the hard way, and every one of them passes a
+green build. They fail at first invocation instead.
+
+**`npx vercel build` on macOS does not reproduce the real file trace.**
+It emits an ~88KB function with no onnxruntime-node inside it. Do not
+use it to check what is in the bundle - it will tell you the native
+dependency is missing when it is not, or absent when it is. The deployed
+artifact is the only honest source. Measured on iad1: **36.86MB** for
+`api/health-onnx`, against the 250MB limit.
+
+**Vercel needs Git LFS switched on** in Settings → Git. Without it the
+model arrives as a ~130 byte pointer file, the build succeeds, and ONNX
+fails to parse it at runtime. `scripts/check-lfs.mjs` runs on install
+and turns that into a clear message.
+
+**`.npmrc` is load-bearing - do not delete it as redundant defaults.**
+onnxruntime-node's postinstall manifest requires `[]` on every platform
+except `linux/x64`, which defaults to `["cuda12"]` and downloads the
+CUDA and TensorRT execution providers from nuget. There is no GPU on
+Vercel. It never reproduces on macOS or Windows. ⚠️ Any Dockerfile or
+build context that runs `pnpm install` must copy `.npmrc` in first, or
+the setting silently does not apply.
+
+**pnpm's side-effects cache can make an install-config fix inert.** It
+stores the files a postinstall produced and replays them on later
+installs without re-running the script, so a store populated before a
+fix keeps handing back the old result - the setting looks ignored. Hence
+`side-effects-cache=false`, and a CI cache key that includes the install
+config rather than just the lockfile.
+
+**Nothing is proven about the native stack until it is invoked.** LFS,
+model hash, CUDA skip and tracing globs are all build-time checks that
+pass without loading a single native symbol. `/api/health-onnx` (gated
+behind `ENABLE_ONNX_HEALTH`) is what actually proves it.

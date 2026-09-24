@@ -24,6 +24,11 @@ const nextConfig: NextConfig = {
    * code stops the walk at its edge, and it is then required from
    * node_modules at runtime where the platform binaries resolve
    * normally. File tracing is a separate pass and still collects it.
+   *
+   * REMOVING @pps/features FROM THIS LIST BREAKS THE BUILD by dragging
+   * sharp into the bundle - and if a future Next version bundles it
+   * without erroring, it breaks at FIRST INVOCATION, NOT AT BUILD TIME.
+   * Verify with /api/health-onnx on a preview, never with a green build.
    */
   serverExternalPackages: ['sharp', 'onnxruntime-node', '@pps/features'],
 

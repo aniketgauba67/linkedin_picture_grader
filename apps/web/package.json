@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
     "clean": "rm -rf .next .turbo"
   },
+  "//dependencies": "sharp and onnxruntime-node are listed here even though only @pps/features imports them. They are in serverExternalPackages, which means Next requires them from node_modules RELATIVE TO THIS APP at runtime - and under pnpm's isolated layout a transitive dependency is not there. REMOVING THEM BREAKS THE ROUTE AT FIRST INVOCATION, NOT AT BUILD TIME: the build goes green and /api/health-onnx returns \"Could not load the sharp module\". Verify on a preview deployment, never from a local build - see CLAUDE.md > Deployment gotchas.",
   "dependencies": {
     "@pps/db": "workspace:*",
     "@pps/features": "workspace:*",

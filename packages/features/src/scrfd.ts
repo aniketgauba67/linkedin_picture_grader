@@ -89,10 +89,14 @@ let sessionPromise: Promise<{ ort: OrtLike; session: OrtSession }> | null = null
  * `webpackIgnore` is required, not decorative. onnxruntime-node's
  * binding.js builds a require context over every platform's
  * `onnxruntime_binding.node`, so a bundler that follows the import tries
- * to parse a native addon as JavaScript and the build dies with
- * "Module parse failed: Unexpected character". The package is listed in
+ * to parse a native addon as JavaScript. The package is listed in
  * serverExternalPackages precisely so it is required from node_modules
  * at runtime instead.
+ *
+ * REMOVING THIS BREAKS THE NEXT.JS BUILD with "Module parse failed:
+ * Unexpected character" pointing at a .node file. That one at least
+ * fails loudly - the sibling fixes in next.config.ts and apps/web's
+ * package.json fail at FIRST INVOCATION, not at build time.
  */
 async function loadOnnxRuntime(): Promise<OrtLike> {
   const mod = await import(/* webpackIgnore: true */ 'onnxruntime-node');

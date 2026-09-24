@@ -31,6 +31,11 @@ export function createOnnxDetector(options: OnnxDetectorOptions): Detector {
     inputNames: readonly string[];
     outputNames: readonly string[];
   }> {
+    // webpackIgnore is load-bearing: onnxruntime-node's binding.js
+    // builds a require context over every platform's
+    // onnxruntime_binding.node, so a bundler that follows this import
+    // parses a native addon as JavaScript. Removing it breaks the
+    // Next.js build with "Module parse failed: Unexpected character".
     session ??= import(/* webpackIgnore: true */ 'onnxruntime-node').then((ort) =>
       ort.InferenceSession.create(options.modelPath, { graphOptimizationLevel: 'all' }),
     );
@@ -40,6 +45,8 @@ export function createOnnxDetector(options: OnnxDetectorOptions): Detector {
   return {
     async detect(plane: RgbPlane): Promise<readonly FaceObservation[]> {
       const active = await getSession();
+      // See the note on the import above: webpackIgnore keeps the
+      // bundler out of the native addon. Both call sites need it.
       const ort = await import(/* webpackIgnore: true */ 'onnxruntime-node');
 
       const tensorData = new Float32Array(inputSize * inputSize);
