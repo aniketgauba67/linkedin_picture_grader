@@ -16,7 +16,7 @@
     "test:watch": "vitest",
     "test:turbo": "turbo run test",
     "eval": "pnpm --silent --filter @pps/eval build && node packages/eval/dist/cli.js",
-    "corpus": "pnpm --silent --filter @pps/training build && node training/dist/collect-corpus.js",
+    "corpus": "pnpm --silent --filter @pps/training build && node --env-file-if-exists=.env.local training/dist/collect-corpus.js",
     "clean": "turbo run clean && rm -rf node_modules",
     "postinstall": "node scripts/check-lfs.mjs && node scripts/verify-models.mjs",
     "verify:models": "node scripts/verify-models.mjs",

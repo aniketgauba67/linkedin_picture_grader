@@ -475,7 +475,10 @@ export function renderSummary(summary: CollectSummary, total: number): string {
     'summary',
     '-------',
     `  collected this run       ${summary.collected}`,
-    `  already in the manifest  ${summary.skippedAlreadyHave}`,
+    // Not "already in the manifest": this also counts a photo returned
+    // by a second query within the same run, which on a dry run is every
+    // one of them.
+    `  already seen             ${summary.skippedAlreadyHave}`,
     `  duplicate photographs    ${summary.skippedDuplicateHash}`,
     `  failures                 ${summary.failures.length}`,
   ];

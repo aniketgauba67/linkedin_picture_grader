@@ -4,9 +4,12 @@
  * Two different hosts with two different rules, and conflating them is
  * the mistake worth avoiding:
  *
- *   api.pexels.com    - rate limited, 200 requests/hour on the free tier,
- *                       and it TELLS you where you stand in the response
- *                       headers. Searches only.
+ *   api.pexels.com    - rate limited, and it TELLS you where you stand in
+ *                       the response headers. Searches only. The published
+ *                       free-tier figure is 200/hour, but a real key
+ *                       measured on 2026-09-24 reported a limit of 25000
+ *                       with a reset ~30 days out, so the quota is per
+ *                       key and not worth hardcoding. Read the headers.
  *   images.pexels.com - a CDN. Not part of the quota, but still somebody
  *                       else's bandwidth, so downloads run at a modest
  *                       fixed concurrency rather than all at once.

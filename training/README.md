@@ -10,10 +10,15 @@ everything else — nothing in `apps/` or `packages/` may depend on it.
 
 Builds the labelling corpus from [Pexels](https://www.pexels.com/api/).
 
+The key comes from `.env.local`, loaded by `--env-file-if-exists` — no
+dependency, and a missing file is a notice rather than a crash. An inline
+value still wins, so either of these works:
+
 ```
-PEXELS_API_KEY=... pnpm corpus                      # 150 images
-PEXELS_API_KEY=... pnpm corpus -- --total 700
-PEXELS_API_KEY=... pnpm corpus -- --dry-run         # fetch and extract, write nothing
+pnpm corpus                                     # key from .env.local, 150 images
+pnpm corpus -- --total 700
+pnpm corpus -- --dry-run                        # fetch and extract, write nothing
+PEXELS_API_KEY=... pnpm corpus                  # inline, overrides the file
 ```
 
 Writes `data/images/<sha256>.jpg`, appends `data/manifest.csv`, and appends
@@ -57,10 +62,16 @@ the exact thing that rule forbids.
 
 ### Rate limits
 
-`api.pexels.com` is 200 requests/hour on the free tier and reports where
-you stand in `X-Ratelimit-Remaining` / `X-Ratelimit-Reset`. The client
-reads those off every response rather than counting locally — a local
-counter is wrong the moment anything else uses the same key.
+`api.pexels.com` reports where you stand in `X-Ratelimit-Remaining` /
+`X-Ratelimit-Reset`, and the client reads those off every response rather
+than counting locally — a local counter is wrong the moment anything else
+uses the same key, and it is wrong about the limit too. Pexels publishes
+200/hour for the free tier; the key measured on 2026-09-24 reported
+`X-Ratelimit-Limit: 25000` resetting roughly 30 days out. Whatever the
+headers say is the truth.
+
+A full 150-image collection costs **17 API requests** — one search per
+query, since 80 results per page covers every target.
 
 `images.pexels.com` is a CDN and not part of that quota, so downloads run
 at a fixed small concurrency instead.
