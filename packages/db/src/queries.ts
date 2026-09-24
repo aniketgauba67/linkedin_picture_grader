@@ -1,6 +1,6 @@
-import type { Assessment, ComputedFeatures, ScoreContext, ScoreResult } from '@pps/schema';
+import type { ComputedFeatures, RubricResponse, ScoreContext, ScoreResult } from '@pps/schema';
 import {
-  Assessment as AssessmentSchema,
+  RubricResponse as RubricResponseSchema,
   ComputedFeatures as ComputedFeaturesSchema,
   EXTRACTOR_VERSION,
   assertFeaturesUsable,
@@ -219,7 +219,12 @@ export async function pruneFeatureCache(
 export interface InsertAssessmentInput {
   readonly photoId: string;
   readonly source: AssessmentSource;
-  readonly assessment: Assessment;
+  /**
+   * The model's whole reply, declines included. Storing the declined
+   * branch too means a "this is a logo" verdict is recorded rather than
+   * re-purchased from the model on every retry.
+   */
+  readonly response: RubricResponse;
   /** Null for `human`. Part of the uniqueness key either way. */
   readonly model?: string | null;
 }
@@ -234,7 +239,7 @@ export async function insertAssessment(
   client: Client,
   input: InsertAssessmentInput,
 ): Promise<Assessment_> {
-  const axes = AssessmentSchema.parse(input.assessment);
+  const axes = RubricResponseSchema.parse(input.response);
 
   const { data, error } = await client
     .from('assessments')

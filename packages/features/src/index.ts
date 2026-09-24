@@ -14,6 +14,34 @@ import { createScrfdDetector } from './scrfd.js';
 
 export { ANALYSIS_EDGE, extractFeatures, toLumaPlane, toRgbPlane } from './extract.js';
 export { ImageDecodeError, asDecodeError } from './errors.js';
+
+export {
+  BASE_BACKOFF_MS,
+  JUDGE_EDGE,
+  JUDGE_JPEG_QUALITY,
+  JudgeError,
+  MAX_ATTEMPTS,
+  TRUNCATION_RETRY_MAX_TOKENS,
+  judgePhoto,
+  parseReply,
+  toJudgeImage,
+} from './judge.js';
+export type { JudgeOptions, JudgeOutcome } from './judge.js';
+
+export {
+  AssessmentSchema,
+  EFFORT,
+  MAX_TOKENS,
+  MODEL,
+  OUTPUT_JSON_SCHEMA,
+  RUBRIC_SCHEMAS,
+  RubricDeclineSchema,
+  RubricResponseSchema,
+  SYSTEM_PROMPT,
+  USER_PROMPT,
+  buildRequest,
+} from './rubric.js';
+export type { BuildRequestOptions } from './rubric.js';
 export {
   EXTREME_ASPECT_RATIO,
   MAX_INPUT_PIXELS,

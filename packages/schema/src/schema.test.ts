@@ -18,7 +18,13 @@ import {
   STRING_FEATURE_FIELDS,
   assertFeaturesUsable,
 } from './features.js';
-import { Assessment, JudgedAxis } from './assessment.js';
+import {
+  Assessment,
+  JudgedAxis,
+  RubricDecline,
+  RubricResponse,
+  isAssessed,
+} from './assessment.js';
 import { Fix, FixSeverity, ScoreResult } from './result.js';
 import { AnalysisOutcome, DeclineReason, isDeclined, isScored, matchOutcome } from './outcome.js';
 import { MAX_UPLOAD_BYTES, UploadRequest } from './image.js';
@@ -62,7 +68,10 @@ const validScores: AxisScores = {
   solo: 5,
 };
 
-const judged = (score: number): JudgedAxis => ({ evidence: 'plain grey wall', score });
+const judged = (score: number): JudgedAxis => ({
+  evidence: 'plain grey wall behind the subject',
+  score,
+});
 
 // ---------------------------------------------------------------------
 // Vocabulary
@@ -362,6 +371,10 @@ describe('JudgedAxis', () => {
     expect(JudgedAxis.safeParse(judged(0)).success).toBe(false);
     expect(JudgedAxis.safeParse(judged(6)).success).toBe(false);
   });
+
+  it('rejects evidence shorter than a real observation', () => {
+    expect(JudgedAxis.safeParse({ evidence: 'busy', score: 2 }).success).toBe(false);
+  });
 });
 
 describe('Assessment', () => {
@@ -370,22 +383,15 @@ describe('Assessment', () => {
     attire: judged(3),
     expression: judged(5),
     solo: judged(5),
-    unscorable: false,
-    unscorable_reason: null,
+    framing_observation: { crop: 'head_and_shoulders', face_roughly_centered: true },
   };
 
-  it('accepts the four judged axes with an explicit unscorable flag', () => {
-    expect(Assessment.parse(complete).unscorable).toBe(false);
-  });
-
-  it('carries a reason when the model declines to score', () => {
-    const declined = { ...complete, unscorable: true, unscorable_reason: 'no person in frame' };
-    expect(Assessment.parse(declined).unscorable_reason).toBe('no person in frame');
+  it('accepts the four judged axes plus the framing observation', () => {
+    expect(Assessment.parse(complete).framing_observation.crop).toBe('head_and_shoulders');
   });
 
   it('rejects a reply that tries to score a computed axis', () => {
-    const overreaching = { ...complete, sharpness: judged(2) };
-    expect(Object.keys(Assessment.parse(overreaching))).not.toContain('sharpness');
+    expect(Assessment.safeParse({ ...complete, sharpness: judged(2) }).success).toBe(false);
   });
 
   it('rejects a missing judged axis', () => {
@@ -393,9 +399,75 @@ describe('Assessment', () => {
     expect(Assessment.safeParse(partial).success).toBe(false);
   });
 
-  it('requires unscorable_reason to be present, even as null', () => {
-    const { unscorable_reason: _reason, ...partial } = complete;
-    expect(Assessment.safeParse(partial).success).toBe(false);
+  it('rejects evidence too thin to justify a score', () => {
+    // A one-word justification is what a model produces when it scores
+    // first and explains afterwards, which is the failure the minimum
+    // length exists to catch.
+    expect(
+      Assessment.safeParse({ ...complete, background: { evidence: 'busy', score: 2 } }).success,
+    ).toBe(false);
+  });
+
+  it('rejects an unknown crop extent', () => {
+    expect(
+      Assessment.safeParse({
+        ...complete,
+        framing_observation: { crop: 'torso', face_roughly_centered: true },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('RubricResponse', () => {
+  const assessment = {
+    background: judged(4),
+    attire: judged(3),
+    expression: judged(5),
+    solo: judged(5),
+    framing_observation: { crop: 'head_only', face_roughly_centered: false },
+  };
+
+  it('accepts the assessed branch', () => {
+    const parsed = RubricResponse.parse({ status: 'assessed', assessment });
+    expect(isAssessed(parsed)).toBe(true);
+  });
+
+  it('accepts a decline with a typed reason and no prose to flatten', () => {
+    const parsed = RubricResponse.parse({
+      status: 'declined',
+      reason: 'apparent_minor',
+      detail: 'This service only assesses photographs of adults.',
+    });
+    expect(isAssessed(parsed)).toBe(false);
+    if (parsed.status !== 'declined') throw new Error('expected a decline');
+    expect(parsed.reason).toBe('apparent_minor');
+  });
+
+  it.each(RubricDecline.options)('maps %s straight onto DeclineReason', (reason) => {
+    // The rubric's reasons are a subset of DeclineReason by construction,
+    // so a decline never needs translating.
+    expect(DeclineReason.options).toContain(reason);
+  });
+
+  it('rejects a decline reason the rubric may not return', () => {
+    // model_refusal comes from stop_reason, never from the model's body.
+    expect(
+      RubricResponse.safeParse({ status: 'declined', reason: 'model_refusal', detail: 'no' })
+        .success,
+    ).toBe(false);
+    expect(
+      RubricResponse.safeParse({ status: 'declined', reason: 'corrupt_file', detail: 'no' })
+        .success,
+    ).toBe(false);
+  });
+
+  it('rejects a branch carrying the other branch payload', () => {
+    expect(RubricResponse.safeParse({ status: 'assessed', reason: 'no_face' }).success).toBe(false);
+    expect(RubricResponse.safeParse({ status: 'declined', assessment }).success).toBe(false);
+  });
+
+  it('rejects an unknown status', () => {
+    expect(RubricResponse.safeParse({ status: 'maybe', assessment }).success).toBe(false);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Assessment, ComputedFeatures, ScoreResult } from '@pps/schema';
+import type { ComputedFeatures, RubricResponse, ScoreResult } from '@pps/schema';
 import { createFakeClient } from './fake-client.js';
 import {
   claimExtraction,
@@ -39,13 +39,15 @@ const features: ComputedFeatures = {
   sourceFormat: 'jpeg',
 };
 
-const assessment: Assessment = {
-  background: { evidence: 'plain grey wall', score: 4 },
-  attire: { evidence: 'open collar shirt', score: 3 },
-  expression: { evidence: 'looking at the lens', score: 4 },
-  solo: { evidence: 'one subject', score: 5 },
-  unscorable: false,
-  unscorable_reason: null,
+const assessed: RubricResponse = {
+  status: 'assessed',
+  assessment: {
+    background: { evidence: 'plain grey wall behind the subject', score: 4 },
+    attire: { evidence: 'open collar button-down shirt', score: 3 },
+    expression: { evidence: 'eyes to the lens, slight smile', score: 4 },
+    solo: { evidence: 'one person in frame, nobody else', score: 5 },
+    framing_observation: { crop: 'head_and_shoulders', face_roughly_centered: true },
+  },
 };
 
 const scoreResult: ScoreResult = {
@@ -291,7 +293,7 @@ describe('insertAssessment', () => {
     await insertAssessment(fake.client, {
       photoId: 'photo-1',
       source: 'vlm',
-      assessment,
+      response: assessed,
       model: 'claude-opus-5',
     });
     expect(fake.argsFor('insert')?.[0]).toMatchObject({ source: 'vlm', model: 'claude-opus-5' });
@@ -303,7 +305,13 @@ describe('insertAssessment', () => {
       insertAssessment(fake.client, {
         photoId: 'photo-1',
         source: 'vlm',
-        assessment: { ...assessment, solo: { evidence: 'one subject', score: 6 } },
+        response: {
+          status: 'assessed',
+          assessment: {
+            ...assessed.assessment,
+            solo: { evidence: 'one person in frame, nobody else', score: 6 },
+          },
+        } as RubricResponse,
       }),
     ).rejects.toThrow();
   });
@@ -311,7 +319,7 @@ describe('insertAssessment', () => {
   it('explains a duplicate as a failed extraction lock, not a database error', async () => {
     const fake = createFakeClient([{ error: { message: 'duplicate key', code: '23505' } }]);
     await expect(
-      insertAssessment(fake.client, { photoId: 'photo-1', source: 'vlm', assessment }),
+      insertAssessment(fake.client, { photoId: 'photo-1', source: 'vlm', response: assessed }),
     ).rejects.toThrow(/extraction lock/);
   });
 });

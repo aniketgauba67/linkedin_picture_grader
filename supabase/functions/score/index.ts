@@ -44,16 +44,30 @@ interface JudgedEntry {
   score: number;
 }
 
-interface VerdictRow {
-  assessment: {
-    background: JudgedEntry;
-    attire: JudgedEntry;
-    expression: JudgedEntry;
-    solo: JudgedEntry;
-    unscorable: boolean;
-    unscorable_reason: string | null;
-  };
-}
+/**
+ * The stored column holds the model's whole reply - the declined branch
+ * included - so a "this is a logo" verdict is served from the row rather
+ * than re-purchased from the model.
+ */
+type VerdictRow =
+  | {
+      assessment: {
+        status: 'assessed';
+        assessment: {
+          background: JudgedEntry;
+          attire: JudgedEntry;
+          expression: JudgedEntry;
+          solo: JudgedEntry;
+        };
+      };
+    }
+  | {
+      assessment: {
+        status: 'declined';
+        reason: DeclineReason;
+        detail: string;
+      };
+    };
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -199,26 +213,31 @@ Deno.serve(async (request: Request): Promise<Response> => {
   if (computed.faceCount === 0) {
     return declined('no_face', 'No face was found in this image, so there is nothing to score.');
   }
-  if (verdict.assessment.unscorable) {
+  // The model looked and declined. Its reasons are a subset of
+  // DeclineReason, so there is nothing to flatten.
+  if (verdict.assessment.status === 'declined') {
     return declined(
-      'not_a_photo',
-      verdict.assessment.unscorable_reason ?? 'This image cannot be assessed as a profile photo.',
+      verdict.assessment.reason,
+      verdict.assessment.detail === ''
+        ? 'This image cannot be assessed as a profile photo.'
+        : verdict.assessment.detail,
     );
   }
 
+  const judged = verdict.assessment.assessment;
   const axes: AxisScores = {
     ...scoreComputedAxes(computed),
-    background: verdict.assessment.background.score,
-    attire: verdict.assessment.attire.score,
-    expression: verdict.assessment.expression.score,
-    solo: verdict.assessment.solo.score,
+    background: judged.background.score,
+    attire: judged.attire.score,
+    expression: judged.expression.score,
+    solo: judged.solo.score,
   };
 
   // `solo` is judged by the model and `faceCount` is measured. They are
   // never merged into a score; a contradiction between them just means
   // the result deserves less trust.
   const confidence = computeConfidence(computed, {
-    soloScore: verdict.assessment.solo.score,
+    soloScore: judged.solo.score,
   });
 
   return json({

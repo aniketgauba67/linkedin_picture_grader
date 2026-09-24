@@ -24,11 +24,13 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@pps/schema": "workspace:*",
     "@pps/scoring": "workspace:*",
     "heic-convert": "^2.1.0",
     "onnxruntime-node": "^1.20.1",
-    "sharp": "^0.33.5"
+    "sharp": "^0.33.5",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/heic-convert": "^2.1.0",
