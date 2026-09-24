@@ -170,3 +170,60 @@ through an entire calibration run unnoticed before this check existed.
 below 4, collapses to a single knot, or has a held-out Spearman under
 0.3. Getting past that requires `--override-stop "<reason>"`, and the
 reason is written into the weights file next to the knots it excused.
+
+---
+
+## The framing top-up, and why merging two labellers failed
+
+40 corpus images were labelled for framing by eye from numbered contact
+sheets, **before** `framingRaw` was computed for any of them, stratified
+12/12/8/8 across scores 5/4/3/2 rather than picked for being well framed.
+
+Fitted on those 40 alone the map behaves: knots reach **5.00**,
+cluster-held-out Spearman **0.797**, in-sample 0.815.
+
+Merged with the 125 validation labels it gets *worse* — top knot 3.00,
+held-out 0.566, still blocked by the stop rule. The cause is not the
+stratification and not the ideal-ratio band:
+
+| label | median `framingRaw`, corpus | median `framingRaw`, validation |
+| --- | --- | --- |
+| 2 | 0.459 | 0.480 |
+| 3 | 0.467 | 0.716 |
+| 4 | 0.563 | 0.752 |
+| 5 | 0.655 | — |
+
+**A photograph the validation labeller scored 3 sits at 0.716. A
+photograph scored 5 in the corpus pass sits at 0.655.** At the same
+measurement the two passes disagree by two whole points, in opposite
+directions. Each set is internally consistent — 0.815 and 0.628 against
+the scalar respectively — but they are on different scales, so merging
+them tells a monotone fit that higher `framingRaw` means a lower label
+and it pools almost everything.
+
+The likely cause is anchoring: the validation set is Commons thumbnails
+where faces are usually small, and the corpus is Pexels portraits where
+they are not. Each pass graded relative to what was achievable in front
+of it. This is ordinary inter-rater drift and it is exactly what
+`krippendorffAlpha` in `packages/eval` exists to measure — except that
+it cannot be measured here, because the two sets share no images.
+
+**Do not merge label sets that share no overlap.** Before combining any
+two labelling passes, have both rate the same 15-20 photographs and
+compute alpha on the overlap. If they agree in rank but differ in offset
+the passes can be rescaled; if they disagree in rank they cannot be
+combined at all.
+
+### A separate finding: the ideal face-area band is set too high
+
+`idealRatioMin/Max` is 0.25-0.35. The photographs labelled 5 in the
+corpus pass have a median `faceAreaRatio` of **0.153**, range
+0.093-0.306. Only 1 of 40 sits above the band at all, so the "too large"
+half of the two-sided penalty is essentially never exercised, while
+well-framed portraits are charged for being "too small".
+
+Searching the band against the merged labels moves the top knot from 3
+to 4 at 0.19-0.21, and a wider 0.10-0.25 raises held-out Spearman to
+0.705. Neither reaches 5, because the label-scale disagreement above
+dominates. The band is a hand-set product constant and has not been
+changed.

@@ -20,7 +20,7 @@
  * Usage: pnpm calibrate [--write]
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { spearman } from '@pps/eval';
 import {
@@ -32,9 +32,29 @@ import {
 } from '@pps/scoring';
 
 import { applyKnots, pava, toKnots, type Knot, type KnotFit, type Observation } from './isotonic-fit.js';
-import { VALIDATION_FEATURES, VALIDATION_SOURCES } from './paths.js';
+import { readManifest } from './manifest.js';
+import {
+  CORPUS_FEATURES,
+  CORPUS_MANIFEST,
+  VALIDATION_FEATURES,
+  VALIDATION_SOURCES,
+} from './paths.js';
 
 export const LABELS_PATH = 'data/validation/calibration-labels.csv';
+/**
+ * Framing top-up labelled from the Pexels corpus.
+ *
+ * Stratified on purpose - roughly 12/12/8/8 across scores 5/4/3/2 - not
+ * picked for being well framed. Anchoring only the top of the scale
+ * leaves 2-4 sparse and produces a cliff in the fit, which is the same
+ * shape of mistake as the label ceiling it is meant to cure.
+ *
+ * Labelled BY EYE FROM CONTACT SHEETS BEFORE framingRaw was computed
+ * for any of them. Labelling against the measurement is circular: the
+ * fit would reproduce the scalar rather than the judgement, and the
+ * correlation would look excellent and mean nothing.
+ */
+export const CORPUS_FRAMING_LABELS = 'data/corpus-framing-labels.csv';
 export const WEIGHTS_PATH = 'packages/scoring/src/weights/v1.ts';
 
 /** Below this an axis level cannot anchor a knot with any confidence. */
@@ -565,11 +585,72 @@ export function parseOverride(argv: readonly string[]): string | null {
   return reason;
 }
 
+/**
+ * Folds in the Pexels framing top-up.
+ *
+ * Two sets, one fit, and the reason it is legitimate to merge them is
+ * that framingRaw is a geometric ratio - face box against frame - with
+ * no dependence on resolution, sensor or subject. The same cannot be
+ * said of sharpness, which is why no equivalent merge exists there.
+ *
+ * Corpus images cluster on photographer from the manifest, exactly as
+ * the validation images cluster on credited creator, so the held-out
+ * split still cuts on who took the photograph.
+ */
+function mergeCorpusFraming(
+  lookup: Record<string, { features: PixelFeatures }>,
+  labels: readonly LabelRow[],
+  clusters: Map<string, string>,
+  log: (line: string) => void,
+): { lookup: Record<string, { features: PixelFeatures }>; labels: readonly LabelRow[] } {
+  if (!existsSync(CORPUS_FRAMING_LABELS) || !existsSync(CORPUS_FEATURES)) {
+    log('no corpus framing top-up found; fitting on the validation set alone');
+    return { lookup, labels };
+  }
+
+  const vectors = new Map<string, PixelFeatures>();
+  for (const line of readFileSync(CORPUS_FEATURES, 'utf8').split('\n')) {
+    if (line.trim() === '') continue;
+    const row = JSON.parse(line) as { sha256: string; features: PixelFeatures };
+    vectors.set(row.sha256, row.features);
+  }
+  const photographer = new Map(
+    readManifest(CORPUS_MANIFEST).rows.map((r) => [r.sha256, r.photographer]),
+  );
+
+  const merged = { ...lookup };
+  const extra: LabelRow[] = [];
+  let missing = 0;
+  for (const row of parseLabels(readFileSync(CORPUS_FRAMING_LABELS, 'utf8'))) {
+    const features = vectors.get(row.filename);
+    if (features === undefined) {
+      missing += 1;
+      continue;
+    }
+    merged[row.filename] = { features };
+    extra.push(row);
+    const credited = photographer.get(row.filename) ?? '';
+    clusters.set(row.filename, credited === '' ? `image:${row.filename}` : `creator:${credited}`);
+  }
+
+  log(
+    `corpus framing top-up: ${extra.length} label(s) merged` +
+      (missing > 0 ? `, ${missing} with no cached vector` : ''),
+  );
+  return { lookup: merged, labels: [...labels, ...extra] };
+}
+
 function main(): number {
   const lookupRaw: unknown = JSON.parse(readFileSync(VALIDATION_FEATURES, 'utf8'));
-  const lookup = lookupRaw as Record<string, { features: PixelFeatures }>;
-  const labels = parseLabels(readFileSync(LABELS_PATH, 'utf8'));
+  let lookup = lookupRaw as Record<string, { features: PixelFeatures }>;
+  let labels = parseLabels(readFileSync(LABELS_PATH, 'utf8'));
   const clusters = clustersFromSources(readFileSync(VALIDATION_SOURCES, 'utf8'));
+
+  const merged = mergeCorpusFraming(lookup, labels, clusters, (line) =>
+    process.stdout.write(`${line}\n`),
+  );
+  lookup = merged.lookup;
+  labels = merged.labels;
   const sharedClusters = new Set(
     [...clusters.values()].filter((c) => c.startsWith('creator:')),
   ).size;

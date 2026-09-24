@@ -43,6 +43,9 @@ data/validation/*
 # The hand-labels. 500 rows of human judgement that cannot be
 # regenerated from anything - losing them means relabelling 125 images.
 !data/validation/calibration-labels.csv
+# The framing top-up labelled from the corpus. Human judgement that
+# cannot be regenerated, same as the validation labels.
+!data/corpus-framing-labels.csv
 # `models/*` rather than `models/`: git cannot re-include a file whose
 # PARENT DIRECTORY is excluded, so a bare `models/` would make the
 # negations below silently do nothing - and `git add -A` would skip the

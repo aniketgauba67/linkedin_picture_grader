@@ -146,6 +146,9 @@ const CLAIMS = [
   ['docs/calibration-notes.md', 'directional features are named as the missing piece', 'key/fill ratio across the face'],
   ['packages/schema/src/features.ts', 'exposureDelta is cached against the revisit', 'The backlight signature'],
   ['training/reextract.ts', 'says why the collector cannot do this job', 'it is resumable by design'],
+  ['docs/calibration-notes.md', 'the two-labeller failure is recorded', 'Do not merge label sets that share no overlap'],
+  ['docs/calibration-notes.md', 'with the evidence that rules the merge out', 'At the same measurement the two passes disagree by two whole points'],
+  ['training/calibrate.ts', 'the top-up says it was labelled before measuring', 'BEFORE framingRaw was computed'],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**
