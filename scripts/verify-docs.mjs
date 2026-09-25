@@ -116,9 +116,9 @@ const CLAIMS = [
   // `//` lines can never match.
   ['training/collect-corpus.ts', 'the pre-filter says why it is not a duplicate check', "protects the bandwidth, and neither can do the other's job"],
 
-  // --- the validation wall ---
-  ['training/paths.ts', 'the wall says why it is mechanical, not remembered', 'A held-out set is only held out until the first time someone looks at it'],
-  ['training/paths.ts', 'and that a leak cannot be undone', 'the only honest fix is 125 new hand-labelled images'],
+  // --- the legacy seed boundary ---
+  ['training/paths.ts', 'the 125 are identified as development seed data', 'DEVELOPMENT/CALIBRATION seed data, not an untouched final test set'],
+  ['training/paths.ts', 'a future final test needs newly sourced images', 'A future final_test must consist of newly sourced, pre-assigned images'],
   ['training/fit-isolation.test.ts', 'neither half of the guard is sufficient alone', 'Neither catches everything alone'],
   ['training/extract-validation.ts', 'says why both pre-checks run before any write', 'because both failures are silent otherwise'],
   ['training/calibrate.ts', 'in-sample correlation is named as flattering', 'an in-sample number and it always flatters'],

@@ -197,8 +197,9 @@ upload the same image each get their own photo row; a globally unique
 hash would make the second uploader's insert collide with the first's row
 and hand them somebody else's photo.
 
-The expensive work is still only done once. `feature_cache` is keyed by
-`(sha256, extractor_version)` and holds nothing but the anonymous
+Expensive feature extraction is reused across matching uploads.
+`feature_cache` is keyed by `(sha256, extractor_version)` and holds
+nothing but the anonymous
 measurements - no uploader, no photo id, no storage path - so it is safe
 to share across accounts. `getFeaturesByHash` reads it; `upsertFeatures`
 writes the photo's feature row and the cache entry in one transaction.
@@ -219,15 +220,18 @@ Analysis returns an `AnalysisOutcome`, a discriminated union on `status`:
 either `scored` with a `ScoreResult`, or `declined` with one of five
 reasons. A logo, a landscape, and a child's photo are all things users
 will upload, so a decline is a branch of the return type rather than a
-thrown error - there is no `.result` to reach for until `status` has been
-narrowed. `matchOutcome` in `@pps/schema` makes that exhaustive.
+thrown error. Non-corrupt declines can carry the score earned by the
+photograph, including measured axes; `corrupt_file` has no score because
+nothing was measured. `matchOutcome` in `@pps/schema` makes handling
+the branches exhaustive.
 
 ## Extraction and scoring are separate
 
 Extraction runs once per image in a Vercel Node function (~800ms) and
-caches a `ComputedFeatures` vector to Postgres. Every field of it is
-`z.number().finite()`, and `assertFeaturesUsable` re-checks it at each
-cache read: a NaN reaching the scorer does not throw, it produces a
-plausible-looking wrong score. Scoring is a dot product over that
+caches a `ComputedFeatures` vector to Postgres. Numeric measurements
+are finite and range-checked; some explicitly permit `null` when they
+were not measurable. `assertFeaturesUsable` re-checks cached vectors:
+a NaN reaching the scorer does not throw, it produces a plausible-looking
+wrong score. Scoring is a dot product over that
 cache (~3ms) and runs in a Supabase Edge Function. Changing a threshold or
 a weight re-scores cached vectors; it never re-reads a pixel.

@@ -11,13 +11,11 @@ import {
 } from './paths.js';
 
 /**
- * The wall between the corpus and the validation set, enforced two ways.
+ * The wall around the legacy seed directory, enforced two ways.
  *
- * This is not a style rule. A held-out set is held out only until the
- * first fit reads it; after that it reports the number it was tuned
- * towards, with full confidence and no visible symptom. Nothing detects
- * it afterwards and nothing undoes it - the only honest repair is 125
- * new hand-labelled photographs.
+ * The 125 images are now explicitly development/calibration seed data,
+ * not a final test. The future VLM-distillation fit.ts still must not
+ * quietly read their computed-axis labels as its own training labels.
  *
  * So: a runtime guard for code that takes a path, and a static scan for
  * code that hardcodes one. Neither catches everything alone. A fit that
@@ -56,7 +54,7 @@ describe('assertNotValidation', () => {
     expect(() => assertNotValidation('data/validationx/a.jpg')).not.toThrow();
   });
 
-  it('names the file and says the set is burned, not just that it failed', () => {
+  it('names the file and the prohibited fitting boundary', () => {
     try {
       assertNotValidation(`${VALIDATION_DIR}/GOOD/G001.jpg`, 'fit.ts');
       throw new Error('expected a throw');
@@ -64,7 +62,7 @@ describe('assertNotValidation', () => {
       if (!(error instanceof ValidationLeakError)) throw error;
       expect(error.message).toContain('fit.ts');
       expect(error.message).toContain('G001.jpg');
-      expect(error.message).toMatch(/burned|measured against, never fitted/);
+      expect(error.message).toMatch(/prohibited for this fitting entry point/);
     }
   });
 });

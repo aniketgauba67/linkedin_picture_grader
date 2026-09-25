@@ -32,6 +32,7 @@ import {
 } from '@pps/scoring';
 
 import { applyKnots, pava, toKnots, type Knot, type KnotFit, type Observation } from './isotonic-fit.js';
+import { parseCsvObjects, parseCsvRecords } from './csv.js';
 import { readManifest } from './manifest.js';
 import {
   CORPUS_FEATURES,
@@ -170,11 +171,9 @@ export interface LabelRow {
   readonly score: number;
 }
 
-/** Minimal CSV read: these files are machine-written, but quoted. */
+/** Read labels with the same quoted-record rules as source metadata. */
 export function parseLabels(text: string): readonly LabelRow[] {
-  const unquote = (value: string): string => value.trim().replace(/^"(.*)"$/s, '$1');
-  const lines = text.split('\n').filter((line) => line.trim() !== '');
-  const header = (lines[0] ?? '').split(',').map(unquote);
+  const [header = [], ...records] = parseCsvRecords(text);
   const columns = {
     filename: header.indexOf('filename'),
     axis: header.indexOf('axis'),
@@ -185,11 +184,13 @@ export function parseLabels(text: string): readonly LabelRow[] {
   }
 
   const rows: LabelRow[] = [];
-  for (const line of lines.slice(1)) {
-    const fields = line.split(',').map(unquote);
+  for (const [index, fields] of records.entries()) {
+    if (fields.length !== header.length) {
+      throw new SyntaxError(`labels CSV record ${index + 2} has ${fields.length} fields; expected ${header.length}`);
+    }
     const score = Number(fields[columns.score]);
     if (!Number.isFinite(score)) {
-      throw new Error(`non-numeric score in row: ${line}`);
+      throw new Error(`non-numeric score in row ${index + 2}`);
     }
     rows.push({
       filename: fields[columns.filename] ?? '',
@@ -444,39 +445,12 @@ export function clustersFromSources(csv: string): Map<string, string> {
   // "Not stated on source page", and an exact match silently treats
   // both as real shared identities.
   const placeholders = /^\s*(unknown|not stated|no(t)? known|anonymous|n\/?a|none|-)\s*/i;
-  const lines = csv.split('\n').filter((line) => line.trim() !== '');
-  const header = (lines[0] ?? '').replace(/^\uFEFF/, '').split(',');
-  const idAt = header.indexOf('image_id');
-  const creatorAt = header.indexOf('creator');
-  if (idAt < 0 || creatorAt < 0) return new Map();
-
-  const rows: { image: string; creator: string }[] = [];
-  for (const line of lines.slice(1)) {
-    // Quoted fields can contain commas; a simple split would shift the
-    // creator column and silently cluster on the wrong string.
-    const fields: string[] = [];
-    let current = '';
-    let quoted = false;
-    for (let i = 0; i < line.length; i += 1) {
-      const ch = line[i];
-      if (quoted) {
-        if (ch === '"' && line[i + 1] === '"') {
-          current += '"';
-          i += 1;
-        } else if (ch === '"') quoted = false;
-        else current += ch ?? '';
-      } else if (ch === '"') quoted = true;
-      else if (ch === ',') {
-        fields.push(current);
-        current = '';
-      } else current += ch ?? '';
-    }
-    fields.push(current);
-
-    const image = (fields[idAt] ?? '').trim();
-    const creator = (fields[creatorAt] ?? '').trim();
-    if (image !== '') rows.push({ image, creator });
-  }
+  const rows = parseCsvObjects(csv)
+    .map((record) => ({
+      image: (record['image_id'] ?? '').trim(),
+      creator: (record['creator'] ?? '').trim(),
+    }))
+    .filter((record) => record.image !== '');
 
   const counts = new Map<string, number>();
   for (const row of rows) {

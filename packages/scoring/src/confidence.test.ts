@@ -112,3 +112,41 @@ describe('computeConfidence', () => {
     expect(value).toBeLessThanOrEqual(1);
   });
 });
+
+describe('an absent solo score is absent, not a default', () => {
+  it('charges nothing when the judge never ran', () => {
+    // null and undefined behave identically; null is what a caller
+    // writes when it looked and there was nothing there.
+    const noFace = { ...certain, faceCount: 0 };
+    expect(computeConfidence(noFace, { soloScore: null })).toBe(
+      computeConfidence(noFace, {}),
+    );
+  });
+
+  it('keeps a measured zero distinct from a missing solo judgment', () => {
+    // faceCount 0 is an actual detector measurement and incurs its 0.45
+    // penalty. A missing solo judgment adds no disagreement penalty.
+    // soloScore 1 is a real 1-5 judgment here only to reproduce the old
+    // placeholder's effect; it must never stand in for an absent judgment.
+    const noFace = { ...certain, faceCount: 0 };
+    expect(computeConfidence(certain, { soloScore: null })).toBe(1);
+    expect(computeConfidence(noFace, { soloScore: null })).toBe(0.55);
+    expect(computeConfidence(noFace, { soloScore: 1 })).toBe(0.35);
+  });
+
+  it('still charges for a real disagreement', () => {
+    // Five faces and the model calling it solo is a genuine conflict.
+    const crowd = { ...certain, faceCount: 5 };
+    expect(computeConfidence(crowd, { soloScore: 5 })).toBeLessThan(
+      computeConfidence(crowd, { soloScore: null }),
+    );
+  });
+
+  it('treats a null solo score the way it treats a null pitch', () => {
+    // Both are "unmeasurable", and neither contributes a fabricated
+    // value. This is the invariant the placeholder violated.
+    const withNullPitch = computeConfidence({ ...certain, pitch: null }, { soloScore: null });
+    const withBoth = computeConfidence({ ...certain, pitch: 4 }, { soloScore: null });
+    expect(withNullPitch).toBe(withBoth);
+  });
+});

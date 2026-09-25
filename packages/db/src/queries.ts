@@ -1,6 +1,6 @@
-import type { ComputedFeatures, RubricResponse, ScoreContext, ScoreResult } from '@pps/schema';
+import type { ComputedFeatures, PersistedAssessmentResponse, ScoreContext, ScoreResult } from '@pps/schema';
 import {
-  RubricResponse as RubricResponseSchema,
+  PersistedAssessmentResponse as PersistedAssessmentResponseSchema,
   ComputedFeatures as ComputedFeaturesSchema,
   EXTRACTOR_VERSION,
   assertFeaturesUsable,
@@ -23,7 +23,7 @@ export type AssessmentSource = 'vlm' | 'local' | 'human';
 
 export interface InsertPhotoInput {
   readonly storagePath: string;
-  /** Content hash. Two uploads of the same bytes resolve to one photo. */
+  /** Claimed content hash; verified bytes may reuse global features, not another uploader's photo row. */
   readonly sha256: string;
   /** Null for anonymous uploads. */
   readonly uploadedBy?: string | null;
@@ -32,8 +32,8 @@ export interface InsertPhotoInput {
 export interface InsertPhotoResult {
   readonly photo: Photo;
   /**
-   * True when these exact bytes were already known. The caller should skip
-   * extraction and read the cached features instead.
+   * True when this uploader already has a photo row for the claimed hash.
+   * Feature reuse still requires verification of the stored bytes.
    */
   readonly deduped: boolean;
 }
@@ -41,16 +41,17 @@ export interface InsertPhotoResult {
 /**
  * Records an upload.
  *
- * `photos.sha256` is unique per uploader, so the same person re-uploading
- * the same bytes resolves to their existing row, and two different people
- * uploading the same image each get their own. A unique violation here
- * therefore always means "this uploader already has this image", never
- * "somebody else does" - which is what makes returning the existing row
+ * `photos.sha256` is unique per uploader, so the same person registering
+ * the same hash resolves to their existing row, and two different people
+ * uploading identical bytes each get their own. A unique violation here
+ * therefore means "this uploader already registered this hash", never
+ * "somebody else did" - which is what makes returning the existing row
  * safe.
  *
  * Anonymous uploads never collide at all: with no uploader to be unique
  * against, the constraint's NULL semantics leave every one of them
- * distinct. They still skip re-extraction through `getFeaturesByHash`.
+ * distinct. They can still reuse extraction through `getFeaturesByHash`
+ * after the uploaded bytes have been verified.
  */
 export async function insertPhoto(
   client: Client,
@@ -115,13 +116,10 @@ export interface CachedFeatures {
  * The dedup read: given a content hash, returns features already
  * extracted from those exact bytes, by anyone.
  *
- * This reads `feature_cache`, which is keyed by hash alone and holds only
- * anonymous measurements - no uploader, no photo id, no storage path. It
- * is the one thing shared across accounts, and sharing it leaks nothing
- * that identifies whose image it was.
- *
- * The extractor version is part of the key, so a vector produced by an
- * older extractor simply misses and the photo is re-extracted.
+ * This reads `feature_cache`, keyed by (verified SHA-256,
+ * extractor_version), which holds only anonymous measurements - no
+ * uploader, photo id, or storage path. It is shared across accounts;
+ * an older extractor version misses and the photo is re-extracted.
  */
 export async function getFeaturesByHash(
   client: Client,
@@ -166,7 +164,7 @@ export interface UpsertFeaturesInput {
 
 /**
  * Records an extraction: this photo's feature row and the shared
- * hash-keyed cache entry, in one transaction.
+ * (SHA-256, extractor_version) cache entry, in one transaction.
  *
  * The two are written together deliberately. Splitting them leaves a
  * window where a photo has features that no later upload can reuse, which
@@ -220,11 +218,11 @@ export interface InsertAssessmentInput {
   readonly photoId: string;
   readonly source: AssessmentSource;
   /**
-   * The model's whole reply, declines included. Storing the declined
-   * branch too means a "this is a logo" verdict is recorded rather than
-   * re-purchased from the model on every retry.
+   * The validated assessment result. This includes rubric declines and
+   * an API-level model refusal, so neither is re-purchased on a retry.
+   * Decode failures never produce an assessment result.
    */
-  readonly response: RubricResponse;
+  readonly response: PersistedAssessmentResponse;
   /** Null for `human`. Part of the uniqueness key either way. */
   readonly model?: string | null;
 }
@@ -239,7 +237,7 @@ export async function insertAssessment(
   client: Client,
   input: InsertAssessmentInput,
 ): Promise<Assessment_> {
-  const axes = RubricResponseSchema.parse(input.response);
+  const axes = PersistedAssessmentResponseSchema.parse(input.response);
 
   const { data, error } = await client
     .from('assessments')
@@ -261,6 +259,47 @@ export async function insertAssessment(
       );
     }
     throw new Error(`Failed to insert assessment: ${error.message}`);
+  }
+  return data;
+}
+
+/**
+ * The idempotent write of the same thing.
+ *
+ * `insertAssessment` raises on a duplicate when a caller needs collision
+ * detection. `/api/extract` can reach this per-photo stage after a cache
+ * hit, fresh extraction, or polling, and a retry must not fail solely
+ * because its own assessment row already exists.
+ *
+ * Conflict target is the natural key (photo_id, source, model), which is
+ * NULLS NOT DISTINCT - so a `human` row with no model still collides
+ * with the previous `human` row rather than accumulating.
+ *
+ * Use this from the extraction route. Use `insertAssessment` when a
+ * duplicate assessment should be reported as an error.
+ */
+export async function upsertAssessment(
+  client: Client,
+  input: InsertAssessmentInput,
+): Promise<Assessment_> {
+  const axes = PersistedAssessmentResponseSchema.parse(input.response);
+
+  const { data, error } = await client
+    .from('assessments')
+    .upsert(
+      {
+        photo_id: input.photoId,
+        source: input.source,
+        axes,
+        model: input.model ?? null,
+      },
+      { onConflict: 'photo_id,source,model' },
+    )
+    .select()
+    .single();
+
+  if (error !== null) {
+    throw new Error(`Failed to upsert assessment: ${error.message}`);
   }
   return data;
 }
@@ -313,36 +352,45 @@ export async function getLatestScore(
 }
 
 /**
- * Takes the extraction lock for a photo.
- *
- * Returns true if this caller now owns extraction, false if another worker
- * holds it. **A caller that gets false must not start its own extraction**
- * - it should poll for the features row. Running the VLM twice is a
- * doubled bill and a duplicate assessment row.
- *
- * The lock goes stale after two minutes so a crashed extraction retries.
+ * Claims expensive extraction for a verified content hash and extractor version.
+ * A non-null token owns the lease; null means another worker owns it or the
+ * global cache has already been filled. Losers poll feature_cache.
+ * A crashed worker's lease can be taken over after two minutes.
  */
 export async function claimExtraction(
   client: Client,
   photoId: string,
+  verifiedSha256: string,
+  extractorVersion: string = EXTRACTOR_VERSION,
   staleAfter: string = EXTRACTION_STALE_AFTER,
-): Promise<boolean> {
+): Promise<string | null> {
   const { data, error } = await client.rpc('claim_extraction', {
     p_photo_id: photoId,
+    p_sha256: verifiedSha256,
+    p_extractor_version: extractorVersion,
     p_stale_after: staleAfter,
   });
 
   if (error !== null) {
     throw new Error(`Failed to claim extraction for ${photoId}: ${error.message}`);
   }
-  return data === true;
+  return data;
 }
 
-/** Hands the lock back so a failed extraction retries without waiting. */
-export async function releaseExtraction(client: Client, photoId: string): Promise<void> {
-  const { error } = await client.rpc('release_extraction', { p_photo_id: photoId });
+/** Only the owner of the current lease can release it. */
+export async function releaseExtraction(
+  client: Client,
+  verifiedSha256: string,
+  extractorVersion: string,
+  claimToken: string,
+): Promise<void> {
+  const { error } = await client.rpc('release_extraction', {
+    p_sha256: verifiedSha256,
+    p_extractor_version: extractorVersion,
+    p_claim_token: claimToken,
+  });
   if (error !== null) {
-    throw new Error(`Failed to release extraction for ${photoId}: ${error.message}`);
+    throw new Error(`Failed to release extraction for ${verifiedSha256}: ${error.message}`);
   }
 }
 
@@ -404,13 +452,31 @@ export async function deletePhoto(client: Client, photoId: string): Promise<bool
  * cleared once Storage has confirmed. Clearing it first would lose the
  * one pointer to the bytes and orphan them permanently.
  */
-export async function reclaimExpiredStorage(client: Client, limit = 500): Promise<number> {
+export interface StorageReclaimSummary {
+  /** Rows phase 1 anonymised on this run. */
+  readonly anonymised: number;
+  /** Anonymised rows still holding a storage_path when this run started. */
+  readonly pending: number;
+  /** Rows whose path was cleared because the object is confirmed gone. */
+  readonly reclaimed: number;
+  /**
+   * Objects Storage did not confirm and that are still present. Left
+   * untouched for the next run rather than marked done.
+   */
+  readonly deferred: number;
+}
+
+export async function reclaimExpiredStorage(
+  client: Client,
+  limit = 500,
+): Promise<StorageReclaimSummary> {
   // Catch up on anything the scheduled sweep has not anonymised yet, so
   // this works standalone if pg_cron is unavailable.
   const swept = await client.rpc('expire_photos', { p_limit: limit });
   if (swept.error !== null) {
     throw new Error(`Failed to anonymise expired photos: ${swept.error.message}`);
   }
+  const anonymised = swept.data ?? 0;
 
   const { data, error } = await client
     .from('photos')
@@ -427,7 +493,7 @@ export async function reclaimExpiredStorage(client: Client, limit = 500): Promis
     (row): row is { id: string; storage_path: string } => row.storage_path !== null,
   );
   if (pending.length === 0) {
-    return 0;
+    return { anonymised, pending: 0, reclaimed: 0, deferred: 0 };
   }
 
   const removal = await client.storage
@@ -437,12 +503,45 @@ export async function reclaimExpiredStorage(client: Client, limit = 500): Promis
     throw new Error(`Failed to remove expired images: ${removal.error.message}`);
   }
 
-  const cleared = await client.rpc('mark_storage_reclaimed', {
-    p_photo_ids: pending.map((row) => row.id),
-  });
+  /**
+   * Storage reports what it actually deleted, and it does NOT fail a
+   * batch for a key that is not there: a missing object simply does not
+   * appear in the response, exactly like one that could not be deleted.
+   *
+   * Clearing storage_path for every id we asked about would therefore
+   * mark an object reclaimed that is still sitting in the bucket - and
+   * because storage_path is the only pointer to those bytes, that
+   * orphans them where nothing can ever find them again. So confirm
+   * instead of assume: anything Storage did not name is checked
+   * individually, counts as gone only on a real "not found", and is
+   * otherwise deferred to the next run.
+   */
+  const confirmed = new Set((removal.data ?? []).map((object) => object.name));
+  const gone: string[] = [];
+  let deferred = 0;
+
+  for (const row of pending) {
+    if (confirmed.has(row.storage_path)) {
+      gone.push(row.id);
+      continue;
+    }
+    const probe = await client.storage.from(IMAGE_BUCKET).info(row.storage_path);
+    if (probe.error !== null) {
+      // Already absent - nothing to reclaim, so the path may be cleared.
+      gone.push(row.id);
+    } else {
+      deferred += 1;
+    }
+  }
+
+  if (gone.length === 0) {
+    return { anonymised, pending: pending.length, reclaimed: 0, deferred };
+  }
+
+  const cleared = await client.rpc('mark_storage_reclaimed', { p_photo_ids: gone });
   if (cleared.error !== null) {
     throw new Error(`Removed the images but could not clear their paths: ${cleared.error.message}`);
   }
 
-  return cleared.data ?? 0;
+  return { anonymised, pending: pending.length, reclaimed: cleared.data ?? 0, deferred };
 }

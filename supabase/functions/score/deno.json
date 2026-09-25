@@ -1,6 +1,8 @@
 {
   "imports": {
-    "@pps/scoring": "../../../packages/scoring/dist/index.js"
+    "@pps/scoring": "../../../packages/scoring/dist/index.js",
+    "@pps/schema": "../../../packages/schema/dist/index.js",
+    "zod": "npm:zod@3.25.76"
   },
   "compilerOptions": {
     "strict": true,

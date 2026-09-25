@@ -2,6 +2,10 @@
 
 Corpus collection now; distillation later.
 
+The resumable offline manifest, seed import, bounded VLM labeling, diversity
+report, and human-review candidate commands are documented in
+[DATASET.md](DATASET.md). They do not fit or change scoring weights.
+
 Not a shipped package. It is a workspace member so it can import
 `@pps/features` and be covered by the same typecheck, lint and test run as
 everything else — nothing in `apps/` or `packages/` may depend on it.

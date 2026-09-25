@@ -9,6 +9,8 @@
     "collect": "node dist/collect-corpus.js",
     "validate:extract": "node dist/extract-validation.js",
     "calibrate": "node dist/calibrate.js",
+    "dataset": "node dist/dataset.js",
+    "offline-label": "node dist/offline-cli.js",
     "reextract": "node dist/reextract.js",
     "test": "vitest run",
     "lint": "eslint .",
@@ -16,6 +18,7 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@pps/eval": "workspace:*",
     "@pps/features": "workspace:*",
     "@pps/schema": "workspace:*",

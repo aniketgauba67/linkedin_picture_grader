@@ -3,9 +3,11 @@ import type { ComputedFeatures, RubricResponse, ScoreResult } from '@pps/schema'
 import { createFakeClient } from './fake-client.js';
 import {
   claimExtraction,
+  releaseExtraction,
   deletePhoto,
   getFeaturesByHash,
   insertAssessment,
+  upsertAssessment,
   insertPhoto,
   insertScore,
   pruneFeatureCache,
@@ -331,6 +333,24 @@ describe('insertAssessment', () => {
   });
 });
 
+describe('upsertAssessment', () => {
+  it('persists a VLM API refusal under the assessment key', async () => {
+    const fake = createFakeClient([{ data: { id: 'a1' } }]);
+    await upsertAssessment(fake.client, {
+      photoId: 'photo-1',
+      source: 'vlm',
+      model: 'claude-sonnet-5',
+      response: { status: 'declined', reason: 'model_refusal', detail: '' },
+    });
+    expect(fake.argsFor('upsert')?.[0]).toMatchObject({
+      photo_id: 'photo-1',
+      source: 'vlm',
+      model: 'claude-sonnet-5',
+      axes: { status: 'declined', reason: 'model_refusal', detail: '' },
+    });
+  });
+});
+
 describe('insertScore', () => {
   it('records the weights version alongside the score', async () => {
     const fake = createFakeClient([{ data: { id: 's1' } }]);
@@ -344,33 +364,42 @@ describe('insertScore', () => {
 });
 
 describe('claimExtraction', () => {
-  it('reports the winner', async () => {
-    const fake = createFakeClient([{ data: true }]);
-    expect(await claimExtraction(fake.client, 'photo-1')).toBe(true);
+  it('returns the owner token for a winner', async () => {
+    const fake = createFakeClient([{ data: 'claim-token' }]);
+    expect(await claimExtraction(fake.client, 'photo-1', 'verified-sha', 'v7')).toBe('claim-token');
   });
 
-  it('reports the loser', async () => {
-    const fake = createFakeClient([{ data: false }]);
-    expect(await claimExtraction(fake.client, 'photo-1')).toBe(false);
-  });
-
-  it('treats a null reply as a loss rather than a win', async () => {
+  it('returns null for a loser', async () => {
     const fake = createFakeClient([{ data: null }]);
-    expect(await claimExtraction(fake.client, 'photo-1')).toBe(false);
+    expect(await claimExtraction(fake.client, 'photo-1', 'verified-sha', 'v7')).toBeNull();
   });
 
-  it('passes the two-minute stale window by default', async () => {
-    const fake = createFakeClient([{ data: true }]);
-    await claimExtraction(fake.client, 'photo-1');
+  it('passes the verified SHA, version and two-minute stale window', async () => {
+    const fake = createFakeClient([{ data: 'claim-token' }]);
+    await claimExtraction(fake.client, 'photo-1', 'verified-sha', 'v7');
     expect(fake.argsFor('rpc')).toEqual([
       'claim_extraction',
-      { p_photo_id: 'photo-1', p_stale_after: '2 minutes' },
+      {
+        p_photo_id: 'photo-1',
+        p_sha256: 'verified-sha',
+        p_extractor_version: 'v7',
+        p_stale_after: '2 minutes',
+      },
     ]);
   });
 
-  it('throws rather than guessing when the lock cannot be taken', async () => {
+  it('releases only the owned content/version claim', async () => {
+    const fake = createFakeClient([{ data: undefined }]);
+    await releaseExtraction(fake.client, 'verified-sha', 'v7', 'claim-token');
+    expect(fake.argsFor('rpc')).toEqual([
+      'release_extraction',
+      { p_sha256: 'verified-sha', p_extractor_version: 'v7', p_claim_token: 'claim-token' },
+    ]);
+  });
+
+  it('throws rather than guessing when the claim RPC fails', async () => {
     const fake = createFakeClient([{ error: { message: 'deadlock detected' } }]);
-    await expect(claimExtraction(fake.client, 'photo-1')).rejects.toThrow(/deadlock detected/);
+    await expect(claimExtraction(fake.client, 'photo-1', 'verified-sha')).rejects.toThrow(/deadlock detected/);
   });
 });
 

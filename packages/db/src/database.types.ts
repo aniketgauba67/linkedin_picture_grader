@@ -52,6 +52,38 @@ export interface Database {
           },
         ];
       };
+      extraction_claims: {
+        Row: {
+          sha256: string;
+          extractor_version: string;
+          owner_photo_id: string;
+          claim_token: string;
+          claimed_at: string;
+        };
+        Insert: {
+          sha256: string;
+          extractor_version: string;
+          owner_photo_id: string;
+          claim_token: string;
+          claimed_at: string;
+        };
+        Update: {
+          sha256?: string;
+          extractor_version?: string;
+          owner_photo_id?: string;
+          claim_token?: string;
+          claimed_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'extraction_claims_owner_photo_id_fkey';
+            columns: ['owner_photo_id'];
+            isOneToOne: false;
+            referencedRelation: 'photos';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       feature_cache: {
         Row: {
           sha256: string;
@@ -149,6 +181,27 @@ export interface Database {
           },
         ];
       };
+      rate_limit_counters: {
+        Row: {
+          scope: string;
+          subject: string;
+          count: number;
+          reset_at: string;
+        };
+        Insert: {
+          scope: string;
+          subject: string;
+          count: number;
+          reset_at: string;
+        };
+        Update: {
+          scope?: string;
+          subject?: string;
+          count?: number;
+          reset_at?: string;
+        };
+        Relationships: [];
+      };
       scores: {
         Row: {
           id: string;
@@ -193,9 +246,20 @@ export interface Database {
       claim_extraction: {
         Args: {
           p_photo_id: string | null;
+          p_sha256: string | null;
+          p_extractor_version: string | null;
           p_stale_after?: string | null;
         };
-        Returns: boolean;
+        Returns: string;
+      };
+      consume_rate_limit: {
+        Args: {
+          p_ip_hash: string | null;
+          p_per_ip_limit: number | null;
+          p_global_limit: number | null;
+          p_window_seconds: number | null;
+        };
+        Returns: Json;
       };
       delete_photo: {
         Args: {
@@ -221,6 +285,10 @@ export interface Database {
         };
         Returns: number;
       };
+      prune_rate_limit_counters: {
+        Args: Record<PropertyKey, never>;
+        Returns: number;
+      };
       record_extraction: {
         Args: {
           p_photo_id: string | null;
@@ -233,7 +301,9 @@ export interface Database {
       };
       release_extraction: {
         Args: {
-          p_photo_id: string | null;
+          p_sha256: string | null;
+          p_extractor_version: string | null;
+          p_claim_token: string | null;
         };
         Returns: undefined;
       };

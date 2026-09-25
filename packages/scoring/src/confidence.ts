@@ -24,14 +24,22 @@ export interface ConfidenceInputs extends PixelFeatures {
 
 export interface ConfidenceContext {
   /**
-   * The vision model's `solo` score, 1-5, when one has been recorded.
+   * The vision model's `solo` score, 1-5, or NULL when the model never
+   * produced one.
    *
    * `solo` is judged, `faceCount` is measured. They are never combined
    * into a score - that would be two systems grading one axis - but when
    * they contradict each other, one of them is wrong and the result
    * deserves less trust.
+   *
+   * NULL MEANS THE JUDGE DID NOT RUN, and it is not a synonym for any
+   * number. The decline paths used to pass 1 here, which is a fabricated
+   * measurement standing in for an absent one: it made every no_face
+   * decline look like a subject disagreement and docked 0.2 for a
+   * contradiction that had not happened. Absent inputs contribute
+   * nothing, exactly as a null `pitch` does.
    */
-  readonly soloScore?: number;
+  readonly soloScore?: number | null;
 }
 
 /** How much a measurement disagreement costs. */
@@ -89,10 +97,10 @@ export function computeConfidence(
     confidence -= 0.1;
   }
 
-  if (
-    context.soloScore !== undefined &&
-    subjectDisagreement(features.faceCount, context.soloScore)
-  ) {
+  // Over the inputs that exist, same rule as pose above. A judged axis
+  // that did not run is absent, never a default.
+  const soloScore = context.soloScore ?? null;
+  if (soloScore !== null && subjectDisagreement(features.faceCount, soloScore)) {
     confidence -= DISAGREEMENT_PENALTY;
   }
 

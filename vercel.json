@@ -5,5 +5,8 @@
   "framework": "nextjs",
   "git": {
     "deploymentEnabled": { "main": true }
-  }
+  },
+  "crons": [
+    { "path": "/api/cron/reclaim", "schedule": "45 3 * * *" }
+  ]
 }

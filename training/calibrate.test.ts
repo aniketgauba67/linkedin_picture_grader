@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -53,6 +54,11 @@ describe('parseLabels', () => {
   it('reads a fully quoted file, which is what the live one is', () => {
     const rows = parseLabels('"filename","axis","score"\n"G001.jpg","sharpness","4"\n');
     expect(rows).toEqual([{ filename: 'G001.jpg', axis: 'sharpness', score: 4 }]);
+  });
+
+  it('keeps a quoted multiline field in one label record', () => {
+    const rows = parseLabels('filename,axis,score,note\n"G,001.jpg",sharpness,4,"first line\nsecond line"\n');
+    expect(rows).toEqual([{ filename: 'G,001.jpg', axis: 'sharpness', score: 4 }]);
   });
 
   it('tolerates columns in a different order', () => {
@@ -271,5 +277,14 @@ describe('clustersFromSources', () => {
 
   it('returns nothing when the columns are absent rather than guessing', () => {
     expect(clustersFromSources('a,b\n1,2\n').size).toBe(0);
+  });
+
+  it('parses the real M007 multiline creator without a phantom cluster', () => {
+    const source = readFileSync(new URL('../data/validation/sources.csv', import.meta.url), 'utf8');
+    const clusters = clustersFromSources(source);
+    expect(clusters.size).toBe(125);
+    expect(new Set(clusters.values()).size).toBe(117);
+    expect(clusters.get('M007.jpg')).toBe('image:M007');
+    expect([...clusters.keys()].every((key) => /^[GMB]\d{3}\.jpg$/.test(key))).toBe(true);
   });
 });

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type pg from 'pg';
 import {
   acquireSuiteLock,
@@ -6,8 +6,16 @@ import {
   databaseReachable,
   releaseSuiteLock,
   resetSchema,
-  seedPhoto,
+  seedPhoto as seedPhotoRaw,
 } from './harness.js';
+
+const SHA_A = 'a'.repeat(64);
+const SHA_B = 'b'.repeat(64);
+const VERSION = 'v7';
+
+async function seedPhoto(client: pg.Client, sha256 = SHA_A): Promise<string> {
+  return seedPhotoRaw(client, { sha256 });
+}
 
 /**
  * The claim has to hold against genuinely simultaneous callers, not just
@@ -39,6 +47,16 @@ suite('claim_extraction under concurrency', () => {
     await releaseSuiteLock();
   });
 
+  beforeEach(async () => {
+    const client = connect();
+    await client.connect();
+    try {
+      await client.query('truncate public.extraction_claims');
+    } finally {
+      await client.end();
+    }
+  });
+
   async function openClients(count: number): Promise<pg.Client[]> {
     const opened = await Promise.all(
       Array.from({ length: count }, async () => {
@@ -51,12 +69,18 @@ suite('claim_extraction under concurrency', () => {
     return opened;
   }
 
-  async function claim(client: pg.Client, photoId: string, staleAfter = '2 minutes') {
-    const { rows } = await client.query<{ claim_extraction: boolean }>(
-      'select public.claim_extraction($1, $2::interval)',
-      [photoId, staleAfter],
+  async function claim(
+    client: pg.Client,
+    photoId: string,
+    sha256 = SHA_A,
+    version = VERSION,
+    staleAfter = '2 minutes',
+  ): Promise<string | null> {
+    const { rows } = await client.query<{ claim_extraction: string | null }>(
+      'select public.claim_extraction($1, $2, $3, $4::interval)',
+      [photoId, sha256, version, staleAfter],
     );
-    return rows[0]?.claim_extraction ?? false;
+    return rows[0]?.claim_extraction ?? null;
   }
 
   it('gives exactly one winner when two callers race', async () => {
@@ -89,11 +113,12 @@ suite('claim_extraction under concurrency', () => {
 
     await Promise.all([claim(a, photoId), claim(b, photoId)]);
 
-    const { rows } = await setup.query<{ extraction_started_at: Date | null }>(
-      'select extraction_started_at from public.photos where id = $1',
-      [photoId],
+    const { rows } = await setup.query<{ owner_photo_id: string; claimed_at: Date }>(
+      'select owner_photo_id, claimed_at from public.extraction_claims where sha256 = $1 and extractor_version = $2',
+      [SHA_A, VERSION],
     );
-    expect(rows[0]?.extraction_started_at).toBeInstanceOf(Date);
+    expect(rows[0]?.owner_photo_id).toBe(photoId);
+    expect(rows[0]?.claimed_at).toBeInstanceOf(Date);
   });
 
   it('keeps the loser locked out while the lock is fresh', async () => {
@@ -101,9 +126,9 @@ suite('claim_extraction under concurrency', () => {
     if (!setup || !a || !b) throw new Error('could not open connections');
     const photoId = await seedPhoto(setup);
 
-    expect(await claim(a, photoId)).toBe(true);
-    expect(await claim(b, photoId)).toBe(false);
-    expect(await claim(b, photoId)).toBe(false);
+    expect(await claim(a, photoId)).not.toBeNull();
+    expect(await claim(b, photoId)).toBeNull();
+    expect(await claim(b, photoId)).toBeNull();
   });
 
   it('lets a later worker take over once the lock goes stale', async () => {
@@ -111,10 +136,13 @@ suite('claim_extraction under concurrency', () => {
     if (!setup || !a || !b) throw new Error('could not open connections');
     const photoId = await seedPhoto(setup);
 
-    expect(await claim(a, photoId)).toBe(true);
-    // A crashed extraction leaves the lock set. A zero-length stale window
+    const firstToken = await claim(a, photoId);
+    expect(firstToken).not.toBeNull();
+    // A crashed extraction leaves the lease set. A zero-length stale window
     // is the same test as waiting two minutes, without the two minutes.
-    expect(await claim(b, photoId, '0 seconds')).toBe(true);
+    const secondToken = await claim(b, photoId, SHA_A, VERSION, '0 seconds');
+    expect(secondToken).not.toBeNull();
+    expect(secondToken).not.toBe(firstToken);
   });
 
   it('still yields one winner when stale claimants race to take over', async () => {
@@ -123,13 +151,14 @@ suite('claim_extraction under concurrency', () => {
     if (!setup) throw new Error('could not open connections');
     const photoId = await seedPhoto(setup);
 
+    await claim(setup, photoId);
     await setup.query(
-      "update public.photos set extraction_started_at = now() - interval '10 minutes' where id = $1",
-      [photoId],
+      "update public.extraction_claims set claimed_at = now() - interval '10 minutes' where sha256 = $1 and extractor_version = $2",
+      [SHA_A, VERSION],
     );
 
     const results = await Promise.all(
-      opened.slice(1).map((client) => claim(client, photoId, '2 minutes')),
+      opened.slice(1).map((client) => claim(client, photoId, SHA_A, VERSION, '2 minutes')),
     );
     expect(results.filter(Boolean)).toHaveLength(1);
   });
@@ -140,13 +169,13 @@ suite('claim_extraction under concurrency', () => {
     const photoId = await seedPhoto(setup);
     await setup.query('select public.delete_photo($1)', [photoId]);
 
-    expect(await claim(a, photoId)).toBe(false);
+    expect(await claim(a, photoId)).toBeNull();
   });
 
   it('refuses to claim a photo that does not exist', async () => {
     const [, a] = await openClients(2);
     if (!a) throw new Error('could not open connections');
-    expect(await claim(a, '00000000-0000-4000-8000-000000000000')).toBe(false);
+    expect(await claim(a, '00000000-0000-4000-8000-000000000000')).toBeNull();
   });
 
   it('release_extraction lets the next worker in immediately', async () => {
@@ -154,8 +183,77 @@ suite('claim_extraction under concurrency', () => {
     if (!setup || !a || !b) throw new Error('could not open connections');
     const photoId = await seedPhoto(setup);
 
-    expect(await claim(a, photoId)).toBe(true);
-    await a.query('select public.release_extraction($1)', [photoId]);
-    expect(await claim(b, photoId)).toBe(true);
+    const token = await claim(a, photoId);
+    expect(token).not.toBeNull();
+    await a.query('select public.release_extraction($1, $2, $3)', [SHA_A, VERSION, token]);
+    expect(await claim(b, photoId)).not.toBeNull();
+  });
+
+  it('allows only one winner across two photo IDs with identical bytes', async () => {
+    const [setup, a, b] = await openClients(3);
+    if (!setup || !a || !b) throw new Error('could not open connections');
+    const photoA = await seedPhoto(setup);
+    const photoB = await seedPhoto(setup);
+    const results = await Promise.all([claim(a, photoA), claim(b, photoB)]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(results.filter((token) => token === null)).toHaveLength(1);
+  });
+
+  it('allows different SHAs to claim independently', async () => {
+    const [setup, a, b] = await openClients(3);
+    if (!setup || !a || !b) throw new Error('could not open connections');
+    const photoA = await seedPhoto(setup, SHA_A);
+    const photoB = await seedPhoto(setup, SHA_B);
+    const results = await Promise.all([
+      claim(a, photoA, SHA_A), claim(b, photoB, SHA_B),
+    ]);
+    expect(results.every((token) => token !== null)).toBe(true);
+  });
+
+  it('allows different extractor versions to claim independently', async () => {
+    const [setup, a, b] = await openClients(3);
+    if (!setup || !a || !b) throw new Error('could not open connections');
+    const photoA = await seedPhoto(setup);
+    const photoB = await seedPhoto(setup);
+    const results = await Promise.all([
+      claim(a, photoA, SHA_A, 'v7'), claim(b, photoB, SHA_A, 'v8'),
+    ]);
+    expect(results.every((token) => token !== null)).toBe(true);
+  });
+
+  it('does not let an expired owner release its successor', async () => {
+    const [setup, a, b] = await openClients(3);
+    if (!setup || !a || !b) throw new Error('could not open connections');
+    const photoA = await seedPhoto(setup);
+    const photoB = await seedPhoto(setup);
+    const oldToken = await claim(a, photoA);
+    const newToken = await claim(b, photoB, SHA_A, VERSION, '0 seconds');
+    expect(oldToken).not.toBeNull();
+    expect(newToken).not.toBeNull();
+    await a.query('select public.release_extraction($1, $2, $3)', [SHA_A, VERSION, oldToken]);
+    expect(await claim(a, photoA)).toBeNull();
+    const { rows } = await setup.query<{ claim_token: string }>(
+      'select claim_token from public.extraction_claims where sha256 = $1 and extractor_version = $2',
+      [SHA_A, VERSION],
+    );
+    expect(rows[0]?.claim_token).toBe(newToken);
+  });
+
+  it('refuses a claimed hash that does not match the photo row', async () => {
+    const [setup, a] = await openClients(2);
+    if (!setup || !a) throw new Error('could not open connections');
+    const photoId = await seedPhoto(setup, SHA_A);
+    expect(await claim(a, photoId, SHA_B)).toBeNull();
+  });
+
+  it('does not claim after the cache was filled between lookup and claim', async () => {
+    const [setup, a] = await openClients(2);
+    if (!setup || !a) throw new Error('could not open connections');
+    const photoId = await seedPhoto(setup);
+    await setup.query(
+      'insert into public.feature_cache (sha256, extractor_version, computed) values ($1, $2, $3)',
+      [SHA_A, VERSION, '{}'],
+    );
+    expect(await claim(a, photoId)).toBeNull();
   });
 });

@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { AxisScore } from './axes.js';
 
+/** Model used for VLM judging and for its per-photo assessment identity. */
+export const ACTIVE_VLM_MODEL = 'claude-sonnet-5';
+
 /**
  * What the vision model returns, and the single source of truth for that
  * shape.
@@ -93,6 +96,19 @@ export const RubricResponse = z.discriminatedUnion('status', [
   DeclinedResponse,
 ]);
 
+/**
+ * What may be stored after a VLM request. The rubric body can only give
+ * RubricDecline reasons; an API refusal arrives separately as
+ * `stop_reason: "refusal"` and is persisted so retries do not buy the
+ * same refusal again. A decode failure never reaches this boundary.
+ */
+export const PersistedAssessmentResponse = z.discriminatedUnion('status', [
+  AssessedResponse,
+  DeclinedResponse.extend({
+    reason: z.union([RubricDecline, z.literal('model_refusal')]),
+  }),
+]);
+
 export type JudgedAxis = z.infer<typeof JudgedAxis>;
 export type CropExtent = z.infer<typeof CropExtent>;
 export type FramingObservation = z.infer<typeof FramingObservation>;
@@ -101,6 +117,7 @@ export type RubricDecline = z.infer<typeof RubricDecline>;
 export type AssessedResponse = z.infer<typeof AssessedResponse>;
 export type DeclinedResponse = z.infer<typeof DeclinedResponse>;
 export type RubricResponse = z.infer<typeof RubricResponse>;
+export type PersistedAssessmentResponse = z.infer<typeof PersistedAssessmentResponse>;
 
 export function isAssessed(response: RubricResponse): response is AssessedResponse {
   return response.status === 'assessed';

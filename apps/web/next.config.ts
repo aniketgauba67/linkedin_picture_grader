@@ -52,10 +52,57 @@ const nextConfig: NextConfig = {
    * naming them here they are simply absent from the bundle and the
    * first invocation fails on a build that went green.
    */
+  /**
+   * onnxruntime-node is loaded through a webpackIgnore-annotated dynamic
+   * import in scrfd.ts and onnx-detector.ts. That annotation is
+   * load-bearing and must stay - but it hides the specifier from the
+   * OUTPUT FILE TRACER as well as from webpack, and the tracer is what
+   * decides which node_modules files ship in the function.
+   *
+   * There is no other reference to the package anywhere in the server
+   * graph, so tracing found nothing and the package was simply absent
+   * from the deployed function. sharp survives only because it is a
+   * PLAIN STATIC IMPORT that the tracer can see; serverExternalPackages
+   * keeps it out of the webpack bundle but does not add anything to the
+   * trace on its own.
+   *
+   * The build stays green either way - it fails on FIRST CACHE-MISS
+   * INVOCATION with ERR_MODULE_NOT_FOUND, which is what production did.
+   * A cache HIT never reaches the native extractor and looks healthy,
+   * so a cache hit is not evidence that this works.
+   *
+   * The globs are relative to this directory and resolve through the
+   * pnpm symlinks, so the files land under apps/web/node_modules/ - the
+   * path Node actually resolves from .next/server/chunks.
+   * outputFileTracingExcludes below still strips the platforms that can
+   * never run here; only linux/x64 survives.
+   *
+   * onnxruntime-common is listed separately and is NOT redundant. An
+   * explicit include is a filesystem glob, not a trace: it copies the
+   * directory it is pointed at and never walks that package's own
+   * dependencies. onnxruntime-node/dist/index.js requires
+   * onnxruntime-common at runtime, so including only onnxruntime-node
+   * moved production from "Cannot find package 'onnxruntime-node'" to
+   * "Cannot find module 'onnxruntime-common'" - the same class of
+   * failure, one level deeper.
+   *
+   * It is also a direct dependency of this app in package.json, which is
+   * what puts it at apps/web/node_modules/onnxruntime-common rather than
+   * inside pnpm's virtual store, where nothing could resolve it. Its
+   * version must stay equal to onnxruntime-node's own pin; check-trace
+   * asserts that so a future bump cannot silently load two copies.
+   */
   outputFileTracingIncludes: {
+    '/api/extract': [
+      '../../models/det_500m.onnx',
+      'node_modules/onnxruntime-node/**/*',
+      'node_modules/onnxruntime-common/**/*',
+    ],
     '/api/health-onnx': [
       '../../models/det_500m.onnx',
       '../../packages/features/fixtures/portrait.jpg',
+      'node_modules/onnxruntime-node/**/*',
+      'node_modules/onnxruntime-common/**/*',
     ],
   },
 

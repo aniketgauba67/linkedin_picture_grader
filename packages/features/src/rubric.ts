@@ -21,7 +21,7 @@
  * separately, because the API wants JSON Schema and zod is not that.
  */
 import { z } from 'zod';
-import { Assessment, RubricDecline, RubricResponse } from '@pps/schema';
+import { ACTIVE_VLM_MODEL, Assessment, RubricDecline, RubricResponse } from '@pps/schema';
 import type { RubricResponse as RubricResponseType } from '@pps/schema';
 
 export {
@@ -34,7 +34,7 @@ export type { Assessment, RubricDecline, RubricResponse } from '@pps/schema';
 /** Re-exported so callers can validate without importing two packages. */
 export const RUBRIC_SCHEMAS = { Assessment, RubricDecline, RubricResponse };
 
-export const MODEL = 'claude-sonnet-5';
+export const MODEL = ACTIVE_VLM_MODEL;
 
 /**
  * Generous for a reply this small, and deliberately so. Adaptive thinking

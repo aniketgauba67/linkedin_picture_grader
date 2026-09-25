@@ -203,17 +203,48 @@ export const WEIGHTS_V1: Weights = {
      * a shared overlap, and an alpha computed on it before any merge.
      * `pnpm --filter @pps/eval exec pps-eval overlap` enforces that.
      *
-     * Over `framingRaw` (1 = ideal, approaching 0 = worst). The knots
-     * were re-spaced for the observation-derived ideal band above; the
-     * band change moves framingRaw for every photograph, so the old
-     * spacing no longer means what it did.
+     * LEVEL-CALIBRATED against the 125-image human seed set. framingRaw
+     * itself is unchanged; only these knots moved.
+     *
+     * The previous hand-set spacing [0.2,1] [0.4,2] [0.6,3] [0.78,4]
+     * [0.92,5] ran roughly +1.39 high against human labels: it scored a
+     * typical human-3 photograph as a 5, and awarded 45 fives over 117
+     * images where humans awarded none. Group-aware 5-fold development
+     * CV, current versus this table on identical held-out rows:
+     *
+     *   bias     +1.393 -> +0.444      MAE      1.427 -> 0.752
+     *   exact     0.162 ->  0.470      within-1 0.530 -> 0.812
+     *   Spearman  0.760 ->  0.757      Kendall  0.656 -> 0.652
+     *
+     * Ordering is preserved; only the levels moved, which is what the
+     * evidence supported.
+     *
+     * KNOTS 1-3 ARE DATA-SUPPORTED: each sits at the median framingRaw
+     * of the photographs humans labelled 1, 2 and 3.
+     *
+     * KNOTS 4 AND 5 ARE SPEC-PRESERVED, NOT LEARNED. framingRaw
+     * saturates at 1.0 and 22 of 117 eligible images sit at exactly
+     * 1.0, carrying ten human-3s and ten human-4s - two classes on one
+     * value, which no threshold can separate. Human 5 has no examples
+     * anywhere in the set. So knot 5 is the measurement ceiling (only
+     * framing the measurement calls perfect earns a 5) and knot 4 is
+     * midway between the human-3 median and that ceiling.
+     *
+     * Placing knot 4 at the human-4 median scores better on every level
+     * metric (MAE 0.496) and makes level 5 UNREACHABLE, because the
+     * human-4 median IS the ceiling. Refused deliberately: an axis that
+     * cannot award its top score is the failure this file has already
+     * shipped once and reverted.
+     *
+     * Development CV estimates, not test accuracy - these 125 images
+     * have already influenced calibration here.
      */
     framing: [
-      [0.2, 1],
-      [0.4, 2],
-      [0.6, 3],
-      [0.78, 4],
-      [0.92, 5],
+      [0.4801, 1],
+      [0.6697, 2],
+      [0.934, 3],
+      [0.967, 4],
+      [1, 5],
     ],
   },
 

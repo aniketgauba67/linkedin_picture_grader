@@ -15,3 +15,4 @@ export * from './assessment.js';
 export * from './result.js';
 export * from './outcome.js';
 export * from './image.js';
+export * from './api.js';

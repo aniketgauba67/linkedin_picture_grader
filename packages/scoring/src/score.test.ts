@@ -15,6 +15,7 @@ import {
 } from './score.js';
 import { CONTEXTS, DEFAULT_CONTEXT, weightsFor } from './weights.js';
 import { AXES, COMPUTED_AXES } from './axes.js';
+import { applyIsotonic } from './isotonic.js';
 
 /** A photograph with nothing wrong with it. */
 const GOOD = {
@@ -451,5 +452,84 @@ describe('a decline is a finding, not missing data', () => {
     // Mirror check: @pps/scoring cannot import @pps/schema, so the two
     // lists are kept in step by this test and nothing else.
     expect(Object.keys(DECLINE_SCORE_CAP).sort()).toEqual([...REASONS].sort());
+  });
+});
+
+describe('framing level calibration', () => {
+  const at = (raw: number): number => applyIsotonic(raw, WEIGHTS_V1.maps.framing);
+  const round = (raw: number): number => Math.min(5, Math.max(1, Math.round(at(raw))));
+
+  it('carries the calibrated knots, not the old hand-set ladder', () => {
+    expect(WEIGHTS_V1.maps.framing).toEqual([
+      [0.4801, 1],
+      [0.6697, 2],
+      [0.934, 3],
+      [0.967, 4],
+      [1, 5],
+    ]);
+  });
+
+  it('is monotonic across the whole raw domain, including outside it', () => {
+    let previous = -Infinity;
+    for (let raw = -0.5; raw <= 1.5; raw += 0.01) {
+      const value = at(raw);
+      expect(value).toBeGreaterThanOrEqual(previous - 1e-9);
+      previous = value;
+    }
+  });
+
+  it('stays inside 1-5 for every raw value, including impossible ones', () => {
+    for (const raw of [-1, -0.5, 0, 0.5, 0.9, 1, 1.5, 1e6]) {
+      expect(at(raw)).toBeGreaterThanOrEqual(1);
+      expect(at(raw)).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it('keeps every level reachable, 1 through 5', () => {
+    // The failure this file has already shipped once: a map that cannot
+    // award its top score disables the axis in production.
+    const reachable = new Set([0, 0.6, 0.9, 0.968, 1].map(round));
+    expect([...reachable].sort()).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('awards 5 only at the measurement ceiling, which is spec not data', () => {
+    // framingRaw = 1/(1 + penalties), so 1.0 is perfect framing and the
+    // most there is. Human 5 has zero examples; this knot is preserved
+    // from product intent rather than learned.
+    expect(at(1)).toBe(5);
+    // Strictly below the ceiling is strictly below 5. Rounding still
+    // reaches 5 just under it, which is interpolation working, not the
+    // knot moving.
+    expect(at(0.99)).toBeLessThan(5);
+    expect(round(0.95)).toBeLessThan(5);
+  });
+
+  it('scores a typical human-3 photograph as 3, not as 5', () => {
+    // The whole point of the recalibration. 0.934 is the median
+    // framingRaw of the human-3 photographs in the seed set; the old
+    // ladder put that above its 0.92 knot and returned 5.
+    expect(round(0.934)).toBe(3);
+  });
+
+  it('leaves the other three computed-axis maps untouched', () => {
+    expect(WEIGHTS_V1.maps.sharpnessFrame).toEqual([[0, 1], [40, 2], [120, 3], [300, 4], [700, 5]]);
+    expect(WEIGHTS_V1.maps.sharpnessEyeRegion).toEqual(WEIGHTS_V1.maps.sharpnessFrame);
+    expect(WEIGHTS_V1.maps.lighting).toEqual([[0, 1], [0.35, 2], [0.6, 3], [0.8, 4], [0.95, 5]]);
+    expect(WEIGHTS_V1.maps.resolution).toEqual([[200, 1], [400, 3], [800, 5]]);
+  });
+
+  it('leaves framingRaw itself untouched - this was a threshold change', () => {
+    expect(WEIGHTS_V1.framing).toEqual({
+      idealRatioMin: 0.1298,
+      idealRatioMax: 0.2396,
+      offsetTolerance: 0.15,
+      ratioPenaltyScale: 5,
+      offsetPenaltyScale: 2,
+    });
+  });
+
+  it('still floors a no-face photograph at framing 1', () => {
+    expect(framingRaw({ ...GOOD, faceCount: 0 } as ValidatedPixelFeatures, WEIGHTS_V1)).toBe(0);
+    expect(round(0)).toBe(1);
   });
 });

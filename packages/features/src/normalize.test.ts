@@ -252,6 +252,21 @@ describe('EXIF orientation', () => {
     expect(source.width).toBe(40);
     expect(source.height).toBe(80);
   });
+
+  it('applies a quarter turn before measuring the 200px boundary image', async () => {
+    const stored = await sharp({
+      create: { width: 200, height: 300, channels: 3, background: { r: 9, g: 9, b: 9 } },
+    })
+      .withMetadata({ orientation: 6 })
+      .jpeg()
+      .toBuffer();
+    const source = await describeSource(stored);
+    expect([source.width, source.height]).toEqual([300, 200]);
+    const normalized = await normalizeImage(stored);
+    const metadata = await sharp(normalized).metadata();
+    expect([metadata.width, metadata.height]).toEqual([300, 200]);
+    expect(metadata.orientation ?? 1).toBe(1);
+  });
 });
 
 /**

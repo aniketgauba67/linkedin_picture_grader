@@ -101,6 +101,14 @@ export function createFakeClient(results: readonly QueuedResult[]): FakeClient {
             const result = nextResult();
             return Promise.resolve({ data: result.data ?? null, error: result.error ?? null });
           },
+          // Retention probes this for any object Storage did not confirm
+          // it deleted. An error stands for "not found"; data stands for
+          // "still there".
+          info(path: string) {
+            calls.push({ method: 'storage.info', args: [path] });
+            const result = nextResult();
+            return Promise.resolve({ data: result.data ?? null, error: result.error ?? null });
+          },
         };
       },
     },

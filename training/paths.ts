@@ -6,17 +6,16 @@
  *                    augmented and overfitted; none of that costs
  *                    anything you cannot get back with another pull.
  *
- * data/validation/ - 125 hand-labelled Wikimedia photographs. READ-ONLY
- *                    for measurement. Never fitted against, never tuned
- *                    on, never used to pick a hyperparameter, a knot, a
- *                    threshold or a weight.
+ * data/validation/ - legacy directory name for 125 hand-labelled
+ *                    Wikimedia images. These are DEVELOPMENT/CALIBRATION
+ *                    seed data, not an untouched final test set. The
+ *                    offline dataset importer reads them without changing
+ *                    their bytes, labels or feature vectors.
  *
- * The distinction is not tidiness. A held-out set is only held out until
- * the first time someone looks at it and changes something - after that
- * it reports the number you tuned towards, and it reports it with total
- * confidence and no visible sign of the leak. There is no way to detect
- * this after the fact and no way to undo it: once a fit has seen these
- * 125 images, the only honest fix is 125 new hand-labelled images.
+ * A future final_test must consist of newly sourced, pre-assigned images.
+ * The guard below remains for the future VLM-distillation fit.ts: it
+ * must not quietly import this legacy computed-axis seed set as VLM
+ * training labels. Computed-axis calibrate.ts is intentionally a reader.
  *
  * So the rule is mechanical rather than remembered. assertNotValidation
  * throws at runtime, and fit-isolation.test.ts fails the build if a
@@ -31,10 +30,13 @@ export const VALIDATION_DIR = 'data/validation';
 export const VALIDATION_FEATURES = 'data/validation/features.json';
 export const VALIDATION_SOURCES = 'data/validation/sources.csv';
 
-/** Modules allowed to read the validation set. Fitting is not on it. */
+/** Explicit readers of the legacy seed directory; fit.ts stays excluded. */
 export const VALIDATION_READERS: readonly string[] = [
   'extract-validation.ts',
   'calibrate.ts',
+  'calibrate.test.ts',
+  'dataset.ts',
+  'dataset.test.ts',
   'paths.ts',
   'fit-isolation.test.ts',
 ];
@@ -45,9 +47,8 @@ export class ValidationLeakError extends Error {
   constructor(path: string, context: string) {
     super(
       `${context} tried to read "${path}", which is inside ${VALIDATION_DIR}. ` +
-        'The validation set is measured against, never fitted against. If a fit ' +
-        'has already read it, the set is burned and no amount of re-running ' +
-        'recovers it - it needs replacing with new hand-labelled images.',
+        'This legacy development seed is prohibited for this fitting entry point. ' +
+        'Use explicit, provenance-checked labels for the intended axis instead.',
     );
     this.name = 'ValidationLeakError';
     this.path = path;

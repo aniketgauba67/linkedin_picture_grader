@@ -23,6 +23,7 @@ import {
   JudgedAxis,
   RubricDecline,
   RubricResponse,
+  PersistedAssessmentResponse,
   isAssessed,
 } from './assessment.js';
 import { Fix, FixSeverity, ScoreResult } from './result.js';
@@ -455,16 +456,16 @@ describe('RubricResponse', () => {
     expect(DeclineReason.options).toContain(reason);
   });
 
-  it('rejects a decline reason the rubric may not return', () => {
-    // model_refusal comes from stop_reason, never from the model's body.
-    expect(
-      RubricResponse.safeParse({ status: 'declined', reason: 'model_refusal', detail: 'no' })
-        .success,
-    ).toBe(false);
-    expect(
-      RubricResponse.safeParse({ status: 'declined', reason: 'corrupt_file', detail: 'no' })
-        .success,
-    ).toBe(false);
+  it('keeps an API refusal out of the rubric body but permits its persisted VLM result', () => {
+    const refusal = { status: 'declined', reason: 'model_refusal', detail: '' };
+    expect(RubricResponse.safeParse(refusal).success).toBe(false);
+    expect(PersistedAssessmentResponse.safeParse(refusal).success).toBe(true);
+  });
+
+  it('rejects corrupt_file from both rubric and persisted assessments', () => {
+    const corrupt = { status: 'declined', reason: 'corrupt_file', detail: '' };
+    expect(RubricResponse.safeParse(corrupt).success).toBe(false);
+    expect(PersistedAssessmentResponse.safeParse(corrupt).success).toBe(false);
   });
 
   it('rejects a branch carrying the other branch payload', () => {

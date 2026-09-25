@@ -43,15 +43,17 @@ suite('migrations', () => {
   });
 
   describe('schema', () => {
-    it('creates the four tables', async () => {
+    it('creates the current tables', async () => {
       const { rows } = await db.query<{ tablename: string }>(
         "select tablename from pg_tables where schemaname = 'public' order by tablename",
       );
       expect(rows.map((row) => row.tablename)).toEqual([
         'assessments',
+        'extraction_claims',
         'feature_cache',
         'features',
         'photos',
+        'rate_limit_counters',
         'scores',
       ]);
     });
@@ -87,7 +89,7 @@ suite('migrations', () => {
         `select relrowsecurity from pg_class
           where relnamespace = 'public'::regnamespace and relkind = 'r'`,
       );
-      expect(rows).toHaveLength(5);
+      expect(rows).toHaveLength(7);
       expect(rows.every((row) => row.relrowsecurity)).toBe(true);
     });
 

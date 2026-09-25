@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { Assessment, DeclineReason, RubricResponse } from '@pps/schema';
+import type { Assessment, RubricDecline, RubricResponse } from '@pps/schema';
 import { asDecodeError } from './errors.js';
 import { MAX_TOKENS, RubricWireResponse, buildRequest, toRubricResponse } from './rubric.js';
 import { normalizedPipeline, prepareImage } from './normalize.js';
@@ -37,7 +37,7 @@ export const TRUNCATION_RETRY_MAX_TOKENS = MAX_TOKENS * 2;
 
 export type JudgeOutcome =
   | { readonly ok: true; readonly assessment: Assessment }
-  | { readonly ok: false; readonly reason: DeclineReason };
+  | { readonly ok: false; readonly reason: RubricDecline | 'model_refusal' };
 
 /** Thrown only after every attempt has failed. A decline never throws. */
 export class JudgeError extends Error {

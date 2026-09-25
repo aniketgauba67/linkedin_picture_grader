@@ -77,14 +77,14 @@ const photoId = ins.data?.id;
 // --- the extraction lock, on real Supabase ----------------------------
 if (photoId) {
   const [a, b] = await Promise.all([
-    svc.rpc('claim_extraction', { p_photo_id: photoId, p_stale_after: '2 minutes' }),
-    svc.rpc('claim_extraction', { p_photo_id: photoId, p_stale_after: '2 minutes' }),
+    svc.rpc('claim_extraction', { p_photo_id: photoId, p_sha256: tag, p_extractor_version: 'smoke-v1', p_stale_after: '2 minutes' }),
+    svc.rpc('claim_extraction', { p_photo_id: photoId, p_sha256: tag, p_extractor_version: 'smoke-v1', p_stale_after: '2 minutes' }),
   ]);
-  const winners = [a.data, b.data].filter((v) => v === true).length;
+  const winners = [a.data, b.data].filter((v) => typeof v === 'string').length;
   check('two concurrent claims produce exactly one winner', winners === 1, `winners=${winners}`);
 
-  const stale = await svc.rpc('claim_extraction', { p_photo_id: photoId, p_stale_after: '0 seconds' });
-  check('a stale lock can be taken over', stale.data === true);
+  const stale = await svc.rpc('claim_extraction', { p_photo_id: photoId, p_sha256: tag, p_extractor_version: 'smoke-v1', p_stale_after: '0 seconds' });
+  check('a stale lock can be taken over', typeof stale.data === 'string');
 
   // --- record_extraction writes both rows in one transaction ----------
   const computed = { sharpnessLaplacian: 400, faceCount: 1 };

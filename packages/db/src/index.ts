@@ -20,10 +20,12 @@ export {
   getFeaturesByHash,
   getLatestScore,
   insertAssessment,
+  upsertAssessment,
   insertPhoto,
   insertScore,
   pruneFeatureCache,
   reclaimExpiredStorage,
+  type StorageReclaimSummary,
   releaseExtraction,
   upsertFeatures,
 } from './queries.js';

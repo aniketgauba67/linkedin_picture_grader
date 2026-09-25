@@ -6,6 +6,13 @@ import { z } from 'zod';
  */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
+/** Minimum oriented width and height for a scoreable profile photograph. */
+export const MIN_IMAGE_SHORT_EDGE_PX = 200;
+
+export function belowDimensionFloor(width: number, height: number): boolean {
+  return Math.min(width, height) < MIN_IMAGE_SHORT_EDGE_PX;
+}
+
 export const ACCEPTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 
 export const MimeType = z.enum(ACCEPTED_MIME_TYPES);
