@@ -28,6 +28,10 @@ const CLAIMS = [
   ['CLAUDE.md', '.npmrc is load-bearing', '.npmrc` is load-bearing'],
   ['CLAUDE.md', 'side-effects cache can make a fix inert', "side-effects cache can make an install-config fix inert"],
   ['CLAUDE.md', 'nothing is proven until invoked', 'Nothing is proven about the native stack until it is invoked'],
+  ['CLAUDE.md', 'a CLI deploy uploads the local working tree', 'not a reproducible build - it uploads your local'],
+  ['CLAUDE.md', 'the root directory makes the build command skip Turbo', 'so the build command runs'],
+  ['CLAUDE.md', 'the turbo filter ellipsis is load-bearing', 'trailing `...` is load-bearing'],
+  ['vercel.json', 'builds workspace dependencies through Turbo', 'turbo run build --filter=@pps/web...'],
 
   // --- 2a05c6e: the three probe fixes, each naming its symptom ---
   ['packages/features/src/scrfd.ts', 'webpackIgnore names its symptom', 'Module parse failed'],

@@ -117,3 +117,24 @@ Check the exit code of the thing you actually care about.
 model hash, CUDA skip and tracing globs are all build-time checks that
 pass without loading a single native symbol. `/api/health-onnx` (gated
 behind `ENABLE_ONNX_HEALTH`) is what actually proves it.
+
+**`vercel --prod` is not a reproducible build - it uploads your local
+working tree.** There is no `.vercelignore`, so a CLI deploy ships
+whatever is on disk, including `packages/*/dist` that `.gitignore` keeps
+out of the repository. Every CLI deployment therefore built against
+artifacts from one laptop, and looked perfectly healthy doing it. A Git
+deployment clones only what is committed, so it is the only honest test
+of whether the repository can build itself.
+
+**The Vercel Root Directory is `apps/web`, so the build command runs
+there, not at the monorepo root.** `pnpm build` in `apps/web` is
+`next build` - it never runs Turbo, so the four `@pps/*` workspace
+packages are never compiled and `next build` cannot resolve them from a
+clean clone. `vercel.json` therefore builds through the dependency graph
+Turbo already declares (`"build": {"dependsOn": ["^build"]}`):
+
+    cd ../.. && pnpm turbo run build --filter=@pps/web...
+
+The trailing `...` is load-bearing - it means "and everything @pps/web
+depends on". Without it Turbo builds only the app and the clean clone
+fails exactly as before. Do not simplify this back to `pnpm build`.
