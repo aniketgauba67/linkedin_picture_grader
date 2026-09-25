@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -27,7 +29,34 @@ const ROOT = fileURLToPath(new URL('../data/dataset-v1', import.meta.url));
 /** The eight seed images below the 200px product floor. */
 const BELOW_FLOOR = ['B016', 'B028', 'B036', 'G009', 'G027', 'G035', 'M030', 'M031'];
 
-describe('eligibility filtering', () => {
+/**
+ * The seed corpus is gitignored and never committed, so a fresh clone -
+ * CI included - does not have it.
+ *
+ * The loaders return EMPTY for a missing directory rather than throwing,
+ * which is the dangerous part: every population comes back empty and the
+ * suite fails with 0 where it expected 125, describing a calibration
+ * problem that does not exist. Skipping explicitly says "not measured
+ * here" instead, the same way the migration and HEIC suites do when
+ * their fixtures are absent.
+ *
+ * Only what actually reads the corpus is gated, per suite where every
+ * test needs it and per test where they are mixed. Fold determinism,
+ * sparse-class safety, driving scalars, scoreMetrics and the
+ * source-inspection check carry no data dependency and must keep running
+ * in CI - that is most of this file's value on a fresh clone.
+ */
+const datasetPresent = existsSync(join(ROOT, 'manifest.jsonl'));
+const datasetSuite = datasetPresent ? describe : describe.skip;
+const datasetIt = datasetPresent ? it : it.skip;
+if (!datasetPresent) {
+  console.warn(
+    `[training] ${ROOT} is absent - skipping the calibration checks that read the seed corpus. ` +
+      'Build it with `pnpm dataset`; see training/DATASET.md.',
+  );
+}
+
+datasetSuite('eligibility filtering', () => {
   const { byAxis, report } = buildPopulation(ROOT);
 
   it('fits only on images the product would actually score', () => {
@@ -67,7 +96,7 @@ describe('eligibility filtering', () => {
 });
 
 describe('human targets only', () => {
-  it('fits against human labels and nothing else', () => {
+  datasetIt('fits against human labels and nothing else', () => {
     const labels = loadHumanLabels(ROOT);
     // HumanLabel is a `source: 'human'` literal, so a VLM row cannot
     // parse into this list at all. The offline eight-axis experiment
@@ -84,7 +113,7 @@ describe('human targets only', () => {
     expect(source).not.toMatch(/VlmLabel|loadVlmLabels|offline_eight/);
   });
 
-  it('keeps the separate framing cohort out of the seed population', () => {
+  datasetIt('keeps the separate framing cohort out of the seed population', () => {
     const { byAxis } = buildPopulation(ROOT, SEED_COHORT);
     const framing = byAxis.get('framing') ?? [];
     const seedIds = new Set(
@@ -130,7 +159,7 @@ describe('group-aware deterministic folds', () => {
     for (const row of rows) expect(a.get(row.imageId)).toBe(b.get(row.imageId));
   });
 
-  it('holds the real seed groups together', () => {
+  datasetIt('holds the real seed groups together', () => {
     const { byAxis } = buildPopulation(ROOT);
     const population = byAxis.get('framing') ?? [];
     const folds = assignFolds(population, 5);
@@ -175,7 +204,7 @@ describe('sparse-class safety', () => {
 });
 
 describe('same-fold comparison', () => {
-  it('scores current and candidate on identical held-out rows', () => {
+  datasetIt('scores current and candidate on identical held-out rows', () => {
     const { byAxis } = buildPopulation(ROOT);
     const rows = byAxis.get('resolution') ?? [];
     const comparison = compareAxis(rows, 'resolution', 5);
@@ -186,7 +215,7 @@ describe('same-fold comparison', () => {
     expect(comparison.current.humanDistribution).toEqual(comparison.candidate.humanDistribution);
   });
 
-  it('is reproducible run to run', () => {
+  datasetIt('is reproducible run to run', () => {
     const { byAxis } = buildPopulation(ROOT);
     const rows = byAxis.get('framing') ?? [];
     expect(compareAxis(rows, 'framing', 5).candidate).toEqual(
