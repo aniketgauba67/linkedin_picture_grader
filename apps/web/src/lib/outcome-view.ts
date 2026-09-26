@@ -9,6 +9,8 @@ import { AXIS_DESCRIPTIONS, type AxisName } from '@pps/scoring';
  */
 export interface OutcomeView {
   readonly kind: 'scored' | 'declined';
+  readonly reason: DeclineReason | null;
+  readonly score: number | null;
   readonly headline: string;
   readonly detail: string;
   readonly rows: readonly AxisRow[];
@@ -45,6 +47,8 @@ export function toView(outcome: AnalysisOutcome): OutcomeView {
   return matchOutcome<OutcomeView>(outcome, {
     scored: (result) => ({
       kind: 'scored',
+      reason: null,
+      score: result.score,
       headline: `${result.score.toFixed(1)} / 10`,
       detail: `Scored for a ${result.context} audience.`,
       rows: axisRows(result),
@@ -53,6 +57,8 @@ export function toView(outcome: AnalysisOutcome): OutcomeView {
     }),
     declined: (reason, message, score) => ({
       kind: 'declined',
+      reason,
+      score: score?.score ?? null,
       // "2.0 / 10" beats "Not scored". A bare decline tells the person
       // nothing they can act on - it does not say whether this was a
       // near miss or hopeless, and those call for different next steps.

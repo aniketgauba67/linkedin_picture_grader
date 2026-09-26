@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { DragEvent } from 'react';
 
 import { toView, type OutcomeView } from '@/lib/outcome-view';
 import {
@@ -9,32 +10,55 @@ import {
   hashFile,
   quickReject,
   type AnalysisResult,
+  type FailureStage,
   type Stage,
 } from '@/lib/analyse';
 
-/** Plain words, no fake percentages - the real progress of an upload is
- *  not something the browser can honestly report mid-PUT. */
-const STAGE_LABEL: Readonly<Record<Stage, string>> = {
-  idle: '',
-  hashing: 'Reading photo',
-  uploading: 'Uploading photo',
-  analysing: 'Analysing photo',
-  scoring: 'Scoring photo',
-  done: 'Complete',
-  failed: '',
-};
+import { AnalysisProgress } from './analysis-progress';
+import { ResultPanel } from './result-panel';
 
 interface Failure {
   readonly message: string;
+  readonly stage: FailureStage | 'unexpected';
+  readonly code: string | null;
   readonly canResume: boolean;
   readonly photoId: string | null;
   readonly retryAfterSeconds: number | null;
 }
 
-export function AnalyseForm({
-  supabaseUrl,
-  supabaseAnonKey,
-}: {
+const NEXT_STEP: Readonly<Record<Failure['stage'], string>> = {
+  validate: 'Choose a JPEG, PNG, or WebP photo under 10 MB.',
+  authorize: 'Wait a moment, then try again with this photo.',
+  upload: 'Check your connection, then try the upload again.',
+  extract: 'Your photo is uploaded. You can retry the review.',
+  score: 'Your photo is ready. You can retry the result.',
+  unexpected: 'Please try again. If this keeps happening, choose another photo.',
+};
+
+const IMAGE_ERROR_HELP: Readonly<Record<string, string>> = {
+  not_an_image: 'Choose a JPEG, PNG, or WebP photo.',
+  mime_mismatch: 'Re-export this image as a JPEG, PNG, or WebP file, then choose the new file.',
+  corrupt_file: 'Choose another photo if re-exporting does not work.',
+  below_dimension_floor: 'Choose a larger photo that is at least 200 pixels on its shorter side.',
+  hash_mismatch: 'Choose the photo again so it can be uploaded afresh.',
+};
+
+function PhotoStage({ preview, file, caption }: {
+  readonly preview: string | null;
+  readonly file: File;
+  readonly caption: string;
+}) {
+  return (
+    <div className="photo-stage">
+      <div className="photo-stage__image">
+        {preview === null ? <p>Preparing preview...</p> : <img src={preview} alt="The photo you selected" />}
+      </div>
+      <div className="photo-stage__caption"><span>{caption}</span><span title={file.name}>{file.name}</span></div>
+    </div>
+  );
+}
+
+export function AnalyseForm({ supabaseUrl, supabaseAnonKey }: {
   readonly supabaseUrl: string;
   readonly supabaseAnonKey: string;
 }) {
@@ -43,21 +67,15 @@ export function AnalyseForm({
   const [stage, setStage] = useState<Stage>('idle');
   const [view, setView] = useState<OutcomeView | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
-  // A ref, not state: the guard must be correct on the same tick a
-  // second click arrives, and a state update is not.
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
+  // Ref protection is immediate, even when React has not rendered a new
+  // disabled state after the first click.
   const running = useRef(false);
-  /**
-   * React state does not own a file input's value - the DOM does.
-   * Clearing `file` alone left the native input still holding its
-   * FileList, so the old filename stayed on screen after a reset and,
-   * worse, re-picking the SAME photo fired no `change` event at all
-   * (the value had not changed), leaving the user stuck on a form that
-   * looked ready and did nothing.
-   */
+  // The browser owns the native FileList. Clearing React state alone does
+  // not allow the same file to be selected again after a reset.
   const fileInput = useRef<HTMLInputElement>(null);
 
-  // Object URLs are a leak if they are never revoked, and a stale
-  // preview is worse than none.
   useEffect(() => {
     if (file === null) {
       setPreview(null);
@@ -70,59 +88,48 @@ export function AnalyseForm({
 
   const busy = stage === 'hashing' || stage === 'uploading' || stage === 'analysing' || stage === 'scoring';
 
-  const run = useCallback(
-    async (resumePhotoId: string | null) => {
-      if (file === null || running.current) return;
-      running.current = true;
-      setFailure(null);
-      setView(null);
-      try {
-        const result: AnalysisResult = await analyse(
-          { file, resumePhotoId },
-          {
-            fetch: globalThis.fetch.bind(globalThis),
-            sha256: hashFile,
-            supabaseUrl,
-            supabaseAnonKey,
-            onStage: setStage,
-          },
-        );
-        setView(toView(result.outcome));
-        setStage('done');
-      } catch (error) {
-        setStage('failed');
-        // An unexpected throw shows the user a safe message and tells
-        // the developer nothing unless it is logged. The user-facing
-        // string stays generic; the console gets the real cause.
-        if (!(error instanceof AnalysisError)) console.error('[analyse]', error);
-        setFailure(
-          error instanceof AnalysisError
-            ? {
-                message: error.message,
-                canResume: error.canResume,
-                photoId: error.photoId,
-                retryAfterSeconds: error.retryAfterSeconds,
-              }
-            : {
-                message: 'Something went wrong. Try again in a moment.',
-                canResume: false,
-                photoId: null,
-                retryAfterSeconds: null,
-              },
-        );
-      } finally {
-        running.current = false;
-      }
-    },
-    [file, supabaseUrl, supabaseAnonKey],
-  );
+  const run = useCallback(async (resumePhotoId: string | null) => {
+    if (file === null || running.current) return;
+    running.current = true;
+    setFailure(null);
+    setView(null);
+    try {
+      const result: AnalysisResult = await analyse({ file, resumePhotoId }, {
+        fetch: globalThis.fetch.bind(globalThis),
+        sha256: hashFile,
+        supabaseUrl,
+        supabaseAnonKey,
+        onStage: setStage,
+      });
+      setView(toView(result.outcome));
+      setStage('done');
+    } catch (error) {
+      setStage('failed');
+      if (!(error instanceof AnalysisError)) console.error('[analyse]', error);
+      setFailure(error instanceof AnalysisError
+        ? { message: error.message, stage: error.stage, code: error.code, canResume: error.canResume,
+          photoId: error.photoId, retryAfterSeconds: error.retryAfterSeconds }
+        : { message: 'Something went wrong. Try again in a moment.', stage: 'unexpected', code: null,
+          canResume: false, photoId: null, retryAfterSeconds: null });
+    } finally {
+      running.current = false;
+    }
+  }, [file, supabaseUrl, supabaseAnonKey]);
 
   const onSelect = (next: File | null): void => {
-    setFile(next);
-    setStage('idle');
+    if (next === null) return;
+    const rejection = quickReject(next);
+    setStage(rejection === null ? 'idle' : 'failed');
     setView(null);
-    setFailure(next === null ? null : { message: quickReject(next) ?? '', canResume: false, photoId: null, retryAfterSeconds: null });
-    if (next !== null && quickReject(next) === null) setFailure(null);
+    if (rejection !== null) {
+      setFile(null);
+      setFailure({ message: rejection, stage: 'validate', code: null, canResume: false,
+        photoId: null, retryAfterSeconds: null });
+      if (fileInput.current !== null) fileInput.current.value = '';
+      return;
+    }
+    setFile(next);
+    setFailure(null);
   };
 
   const reset = (): void => {
@@ -130,118 +137,107 @@ export function AnalyseForm({
     setStage('idle');
     setView(null);
     setFailure(null);
-    // Purely local: clearing the input fires no `change` and touches no
-    // network. The object URL is revoked by the effect above when
-    // `file` becomes null.
+    setDragging(false);
+    dragDepth.current = 0;
     if (fileInput.current !== null) fileInput.current.value = '';
+    // The preview effect revokes its object URL when `file` becomes null.
+  };
+
+  const onDragEnter = (event: DragEvent<HTMLElement>): void => {
+    event.preventDefault();
+    if (busy) return;
+    dragDepth.current += 1;
+    setDragging(true);
+  };
+  const onDragLeave = (event: DragEvent<HTMLElement>): void => {
+    event.preventDefault();
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
+  };
+  const onDrop = (event: DragEvent<HTMLElement>): void => {
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    if (busy) return;
+    // A dropped file does not update the native input's FileList. Clear
+    // an older picker selection so that the same file can be chosen next.
+    if (fileInput.current !== null) fileInput.current.value = '';
+    onSelect(event.dataTransfer.files[0] ?? null);
   };
 
   return (
-    <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3">
-        <label className="text-sm font-medium" htmlFor="photo">
-          Your photo
-        </label>
-        <input
-          id="photo"
-          ref={fileInput}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          disabled={busy}
-          onChange={(event) => onSelect(event.target.files?.[0] ?? null)}
-          className="rounded-lg border border-black/10 px-4 py-3 text-sm"
-        />
-        <p className="text-muted text-sm">
-          JPEG, PNG or WebP, under 10MB. The photo is uploaded exactly as you selected it.
-        </p>
-      </div>
+    <section className="experience" data-state={view !== null ? 'result' : busy ? 'analysing' : 'upload'}>
+      <input id="photo" ref={fileInput} type="file" className="photo-input" aria-label="Choose a photo"
+        accept="image/jpeg,image/png,image/webp" disabled={busy || view !== null}
+        onChange={(event) => onSelect(event.target.files?.[0] ?? null)} />
 
-      {preview !== null && (
-        // A local object URL, never a remote asset, so next/image would
-        // add a loader and an optimisation pass for no benefit.
-        <img src={preview} alt="The photo you selected" className="max-h-80 w-auto rounded-lg border border-black/10" />
-      )}
+      {view !== null && file !== null ? (
+        <div className="experience-layout experience-layout--result">
+          <div className="experience-layout__photo"><PhotoStage preview={preview} file={file} caption="Photo reviewed" /></div>
+          <ResultPanel view={view} onReset={reset} />
+        </div>
+      ) : busy && file !== null ? (
+        <div className="experience-layout experience-layout--analysis">
+          <div className="experience-layout__photo"><PhotoStage preview={preview} file={file} caption="Your selected photo" /></div>
+          <AnalysisProgress stage={stage} />
+        </div>
+      ) : (
+        <div className="experience-layout experience-layout--upload">
+          <div className="upload-intro">
+            <p className="section-kicker">Profile photo review</p>
+            <h1>A clearer look at your profile photo.</h1>
+            <p className="upload-intro__lead">Get a photo score and practical ideas for your next shot. We review the photograph, not the person in it.</p>
+          </div>
 
-      <div className="flex gap-3">
-        <button
-          type="button"
-          disabled={file === null || busy}
-          onClick={() => void run(null)}
-          className="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white disabled:opacity-40"
-        >
-          {busy ? STAGE_LABEL[stage] : 'Score this photo'}
-        </button>
-        {(view !== null || failure !== null) && !busy && (
-          <button type="button" onClick={reset} className="rounded-lg border border-black/10 px-5 py-2.5 text-sm">
-            Try another photo
-          </button>
-        )}
-      </div>
+          <div className="upload-workspace">
+            {file === null ? (
+              <label htmlFor="photo" className={`upload-drop ${dragging ? 'is-dragging' : ''}`}
+                onDragEnter={onDragEnter} onDragLeave={onDragLeave} onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
+                <span className="upload-drop__symbol" aria-hidden="true"><span /></span>
+                <strong>Drop your photo here</strong>
+                <span>or choose one from your device</span>
+                <span className="button button--primary upload-drop__button">Choose a photo</span>
+                <small>JPEG, PNG or WebP · Up to 10 MB</small>
+              </label>
+            ) : (
+              <div className="selected-photo" onDragEnter={onDragEnter} onDragLeave={onDragLeave}
+                onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
+                <PhotoStage preview={preview} file={file} caption="Ready to review" />
+                <div className="selected-photo__actions">
+                  <p>Your photo is ready. We will review its visual quality and presentation.</p>
+                  <label htmlFor="photo" className="text-action">Change photo</label>
+                </div>
+                {dragging && <p className="selected-photo__drop-hint">Drop to replace this photo</p>}
+              </div>
+            )}
 
-      {busy && (
-        <p aria-live="polite" className="text-muted text-sm">
-          {STAGE_LABEL[stage]}&hellip;
-        </p>
-      )}
+            {failure !== null && (
+              <div className="error-panel" role="alert">
+                <div><strong>We could not finish this review.</strong><p>{failure.message}</p>
+                  <p>{failure.code === null ? NEXT_STEP[failure.stage] : IMAGE_ERROR_HELP[failure.code] ?? NEXT_STEP[failure.stage]}</p>
+                  {failure.retryAfterSeconds !== null && <p>Try again in about {failure.retryAfterSeconds} seconds.</p>}
+                </div>
+                <div className="error-panel__actions">
+                  {file !== null && (failure.code === null || !Object.hasOwn(IMAGE_ERROR_HELP, failure.code)) && <button type="button" className="button button--primary"
+                    onClick={() => void run(failure.canResume ? failure.photoId : null)}>Try again</button>}
+                  <button type="button" className="text-action" onClick={reset}>Try another photo</button>
+                </div>
+              </div>
+            )}
 
-      {failure !== null && failure.message !== '' && (
-        <div role="alert" className="flex flex-col gap-3 rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3">
-          <p className="text-sm">{failure.message}</p>
-          {failure.retryAfterSeconds !== null && (
-            <p className="text-muted text-sm">Try again in about {failure.retryAfterSeconds} seconds.</p>
-          )}
-          {failure.canResume && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void run(failure.photoId)}
-              className="self-start rounded-lg border border-black/10 px-4 py-2 text-sm"
-            >
-              Retry without re-uploading
-            </button>
-          )}
+            {file !== null && failure === null && (
+              <button type="button" className="button button--primary analyse-action"
+                onClick={() => void run(null)}>Analyze my photo</button>
+            )}
+            <p className="privacy-note">Your photo is used for this review. Uploaded photos are scheduled for deletion after 30 days.</p>
+          </div>
+          <div className="overview">
+            <p>What we look at</p>
+            <div><strong>Image quality</strong><span>Sharpness, lighting, resolution, framing</span></div>
+            <div><strong>Presentation</strong><span>Background, attire, expression, one clear subject</span></div>
+          </div>
         </div>
       )}
-
-      {view !== null && <Result view={view} />}
     </section>
-  );
-}
-
-function Result({ view }: { readonly view: OutcomeView }): React.JSX.Element {
-  return (
-    <div className="flex flex-col gap-4 rounded-lg border border-black/10 px-5 py-4">
-      <div>
-        <p className="text-3xl font-semibold tracking-tight">{view.headline}</p>
-        <p className="text-muted text-sm">{view.detail}</p>
-      </div>
-
-      {view.rows.length > 0 && (
-        <ul className="flex flex-col gap-1.5">
-          {view.rows.map((row) => (
-            <li key={row.axis} className="flex items-baseline justify-between gap-4 text-sm">
-              <span className="font-medium">{row.axis}</span>
-              <span className="text-muted flex-1 text-xs">{row.description}</span>
-              <span className="tabular-nums">{row.score}/5</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {view.fixes.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium uppercase tracking-wide">What to change</h3>
-          <ul className="flex flex-col gap-1.5">
-            {view.fixes.map((fix) => (
-              <li key={fix.axis} className="text-sm">
-                {fix.message}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {view.caveat !== null && <p className="text-muted text-sm">{view.caveat}</p>}
-    </div>
   );
 }

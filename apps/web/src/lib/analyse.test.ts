@@ -169,9 +169,22 @@ describe('typed failures', () => {
     const error = await failing({ extract: () => json({ error: message }, status) });
     expect(error.stage).toBe('extract');
     expect(error.message).toBe(message);
-    // The bytes are in Storage, so this is resumable.
+    // Legacy responses without a stable code remain resumable.
     expect(error.canResume).toBe(true);
     expect(error.photoId).toBe(PHOTO_ID);
+  });
+
+  it.each([
+    ['not_an_image', 415],
+    ['mime_mismatch', 415],
+    ['corrupt_file', 422],
+    ['below_dimension_floor', 422],
+    ['hash_mismatch', 409],
+  ])('does not retry the same bytes after a typed %s input rejection', async (code, status) => {
+    const error = await failing({ extract: () => json({ error: 'Choose a different file.', code }, status) });
+    expect(error.stage).toBe('extract');
+    expect(error.code).toBe(code);
+    expect(error.canResume).toBe(false);
   });
 
   it('treats a failed Storage PUT as NOT resumable', async () => {

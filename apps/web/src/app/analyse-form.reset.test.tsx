@@ -12,14 +12,25 @@
  * nothing.
  *
  * "Try another photo" only renders once there is a result or a failure,
- * so these tests reach it through a client-side rejection: an oversized
- * file is refused synchronously by `quickReject`, with no network and no
- * upload. That is the same `reset` the scored path calls.
+ * so these tests reach it through a controlled failed analysis of an
+ * otherwise valid selected photo. That is the same `reset` the scored path calls.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { AnalysisError } from '@/lib/analyse';
+
+const mockAnalyse = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/analyse', async (importOriginal) => ({
+  ...await importOriginal(),
+  analyse: mockAnalyse,
+}));
 
 import { AnalyseForm } from './analyse-form.js';
+
+beforeEach(() => {
+  mockAnalyse.mockReset();
+  mockAnalyse.mockRejectedValue(new AnalysisError('authorize', 'Could not start the upload.'));
+});
 
 afterEach(() => {
   cleanup();
@@ -48,11 +59,8 @@ function renderForm(): HTMLInputElement {
   return document.querySelector('input[type=file]') as HTMLInputElement;
 }
 
-/** Refused by quickReject on size alone - no bytes are ever read. */
-function oversizedPhoto(name = 'too-big.jpg'): File {
-  const file = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], name, { type: 'image/jpeg' });
-  Object.defineProperty(file, 'size', { value: 50 * 1024 * 1024 });
-  return file;
+function selectedPhoto(name = 'portrait.jpg'): File {
+  return new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], name, { type: 'image/jpeg' });
 }
 
 function select(input: HTMLInputElement, file: File): void {
@@ -61,6 +69,11 @@ function select(input: HTMLInputElement, file: File): void {
 
 function reset(): void {
   fireEvent.click(screen.getByRole('button', { name: /try another photo/i }));
+}
+
+async function reachFailure(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: /analyze my photo/i }));
+  await waitFor(() => expect(screen.getByRole('alert')).not.toBeNull());
 }
 
 /**
@@ -95,14 +108,15 @@ function watchValueWrites(input: HTMLInputElement): string[] {
 }
 
 describe('AnalyseForm reset', () => {
-  it('clears the native file input, not just React state', () => {
+  it('clears the native file input, not just React state', async () => {
     stubObjectUrls();
     const input = renderForm();
     const valueWrites = watchValueWrites(input);
 
-    select(input, oversizedPhoto());
+    select(input, selectedPhoto());
     expect(valueWrites).toEqual([]);
 
+    await reachFailure();
     reset();
 
     // The assertion the production defect would have failed: reset must
@@ -111,25 +125,27 @@ describe('AnalyseForm reset', () => {
     expect(input.value).toBe('');
   });
 
-  it('clears the preview and revokes its object URL', () => {
+  it('clears the preview and revokes its object URL', async () => {
     const urls = stubObjectUrls();
     const input = renderForm();
 
-    select(input, oversizedPhoto());
+    select(input, selectedPhoto());
     expect(document.querySelector('img')).not.toBeNull();
     expect(urls.created).toHaveLength(1);
 
+    await reachFailure();
     reset();
 
     expect(document.querySelector('img')).toBeNull();
     expect(urls.revoked).toEqual(urls.created);
   });
 
-  it('clears the failure message', () => {
+  it('clears the failure message', async () => {
     stubObjectUrls();
     const input = renderForm();
 
-    select(input, oversizedPhoto());
+    select(input, selectedPhoto());
+    await reachFailure();
     expect(screen.queryByRole('button', { name: /try another photo/i })).not.toBeNull();
 
     reset();
@@ -138,12 +154,13 @@ describe('AnalyseForm reset', () => {
     expect(screen.queryByRole('button', { name: /try another photo/i })).toBeNull();
   });
 
-  it('accepts the same file again after a reset', () => {
+  it('accepts the same file again after a reset', async () => {
     stubObjectUrls();
     const input = renderForm();
-    const same = oversizedPhoto('same.jpg');
+    const same = selectedPhoto('same.jpg');
 
     select(input, same);
+    await reachFailure();
     reset();
     select(input, same);
 
@@ -157,15 +174,17 @@ describe('AnalyseForm reset', () => {
     expect(document.querySelector('img')).not.toBeNull();
   });
 
-  it('makes no network request merely from resetting', () => {
+  it('makes no network request merely from resetting', async () => {
     stubObjectUrls();
     const fetchSpy = vi.fn(() => Promise.reject(new Error('reset must not call fetch')));
     vi.stubGlobal('fetch', fetchSpy);
     const input = renderForm();
 
-    select(input, oversizedPhoto());
+    select(input, selectedPhoto());
+    await reachFailure();
     reset();
 
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(mockAnalyse).toHaveBeenCalledTimes(1);
   });
 });

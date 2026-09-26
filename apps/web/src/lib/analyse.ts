@@ -4,8 +4,8 @@
  *   hash -> /api/upload-url -> PUT to Storage -> /api/extract -> score
  *
  * `fetch` and the hasher are injected, so every branch is testable
- * without a network, and the UI component holds no logic worth testing
- * separately.
+ * without a network. The UI separately tests selection, progress, retry,
+ * and reset behavior.
  *
  * WHAT THIS DELIBERATELY DOES NOT DO. It does not resize, recompress or
  * strip anything before upload: the server re-hashes the stored bytes
@@ -34,6 +34,7 @@ export type FailureStage = 'validate' | 'authorize' | 'upload' | 'extract' | 'sc
 
 export class AnalysisError extends Error {
   readonly stage: FailureStage;
+  readonly code: string | null;
   /** True when the bytes are already in Storage, so a retry may skip the
    *  upload entirely - the feature cache and the extraction claim make
    *  re-requesting extraction cheap and safe. */
@@ -44,11 +45,12 @@ export class AnalysisError extends Error {
   constructor(
     stage: FailureStage,
     message: string,
-    options: { canResume?: boolean; photoId?: string | null; retryAfterSeconds?: number | null } = {},
+    options: { canResume?: boolean; photoId?: string | null; retryAfterSeconds?: number | null; code?: string | null } = {},
   ) {
     super(message);
     this.name = 'AnalysisError';
     this.stage = stage;
+    this.code = options.code ?? null;
     this.canResume = options.canResume ?? false;
     this.photoId = options.photoId ?? null;
     this.retryAfterSeconds = options.retryAfterSeconds ?? null;
@@ -95,17 +97,21 @@ export function quickReject(file: File): string | null {
   return null;
 }
 
-/** Reads the route's stable message, never a raw body. */
-async function failureMessage(response: Response, fallback: string): Promise<string> {
+/** Reads the route's stable error, never a raw provider body. */
+async function failureInfo(response: Response, fallback: string): Promise<{ message: string; code: string | null }> {
   try {
     const parsed = ApiError.safeParse(await response.json());
-    if (parsed.success) return parsed.data.error;
+    if (parsed.success) return { message: parsed.data.error, code: parsed.data.code ?? null };
   } catch {
     // A non-JSON body is a provider page or a proxy error. Neither is
     // something to show a user.
   }
-  return fallback;
+  return { message: fallback, code: null };
 }
+
+const PERMANENT_IMAGE_ERRORS = new Set([
+  'not_an_image', 'mime_mismatch', 'corrupt_file', 'below_dimension_floor', 'hash_mismatch',
+]);
 
 function retryAfter(response: Response): number | null {
   const header = response.headers.get('retry-after');
@@ -139,10 +145,11 @@ export async function analyse(input: AnalyseInput, deps: AnalyseDeps): Promise<A
     });
 
     if (!authorize.ok) {
+      const failure = await failureInfo(authorize, 'Could not start the upload.');
       throw new AnalysisError(
         'authorize',
-        await failureMessage(authorize, 'Could not start the upload.'),
-        { retryAfterSeconds: retryAfter(authorize) },
+        failure.message,
+        { code: failure.code, retryAfterSeconds: retryAfter(authorize) },
       );
     }
 
@@ -174,10 +181,12 @@ export async function analyse(input: AnalyseInput, deps: AnalyseDeps): Promise<A
   });
 
   if (!extractResponse.ok) {
-    // The bytes ARE in Storage by now, so this is resumable: extraction
-    // is idempotent through the feature cache and the content claim.
-    throw new AnalysisError('extract', await failureMessage(extractResponse, 'Could not analyse this photo.'), {
-      canResume: true,
+    // Temporary failures can resume from uploaded bytes. A known invalid
+    // image needs a different file; retrying the same bytes cannot help.
+    const failure = await failureInfo(extractResponse, 'Could not analyse this photo.');
+    throw new AnalysisError('extract', failure.message, {
+      canResume: failure.code === null || !PERMANENT_IMAGE_ERRORS.has(failure.code),
+      code: failure.code,
       photoId,
       retryAfterSeconds: retryAfter(extractResponse),
     });
@@ -202,8 +211,10 @@ export async function analyse(input: AnalyseInput, deps: AnalyseDeps): Promise<A
   });
 
   if (!scoreResponse.ok) {
-    throw new AnalysisError('score', await failureMessage(scoreResponse, 'Could not score this photo.'), {
+    const failure = await failureInfo(scoreResponse, 'Could not score this photo.');
+    throw new AnalysisError('score', failure.message, {
       canResume: true,
+      code: failure.code,
       photoId,
       retryAfterSeconds: retryAfter(scoreResponse),
     });
