@@ -80,7 +80,19 @@ export interface Weights {
 
 export const WEIGHTS_V1: Weights = {
   version: '2026-09-24.2',
-  compatibleExtractorVersion: 'v7',
+  /**
+   * Extractor v8 changes face eligibility and missing-value semantics.
+   * The existing V1 framing calibration is intentionally carried forward
+   * without refitting pending independent validation.
+   *
+   * What changed underneath these knots: the minimum qualifying face area
+   * fell from 1% to 0.25% of the frame, so photographs whose only faces
+   * were small now produce a real `framingRaw` instead of a fabricated 0,
+   * and photographs with no qualifying face produce no framing score at
+   * all instead of flooring to 1. The knots themselves, `framingRaw` and
+   * every other axis map are untouched.
+   */
+  compatibleExtractorVersion: 'v8',
 
   maps: {
     /**

@@ -18,6 +18,17 @@ import { AXES, COMPUTED_AXES } from './axes.js';
 import { applyIsotonic } from './isotonic.js';
 
 /** A photograph with nothing wrong with it. */
+/**
+ * framingRaw for features that certainly carry geometry. Since extractor
+ * v8 the return is `number | null`; these cases all supply a face, so a
+ * null here is a bug in the test rather than a case to handle.
+ */
+const rawOf = (f: ValidatedPixelFeatures, w = WEIGHTS_V1): number => {
+  const v = framingRaw(f, w);
+  if (v === null) throw new Error('expected framing to be measurable');
+  return v;
+};
+
 const GOOD = {
   width: 1600,
   height: 1600,
@@ -37,7 +48,7 @@ const GOOD = {
   faceCenterOffsetX: 0.01,
   faceCenterOffsetY: -0.02,
   faceCount: 1,
-  extractorVersion: 'v7',
+  extractorVersion: 'v8',
 } as ValidatedPixelFeatures;
 
 /** Soft, dark, tiny, and the subject is a speck in the corner. */
@@ -207,9 +218,9 @@ describe('two-sided axes', () => {
   it('penalises a face that is too large, not only one that is too small', () => {
     // The bug an isotonic map cannot express: framing is NOT monotone in
     // faceAreaRatio, so the map runs over framingRaw instead.
-    const ideal = framingRaw({ ...GOOD, faceAreaRatio: 0.18 }, WEIGHTS_V1);
-    const tooSmall = framingRaw({ ...GOOD, faceAreaRatio: 0.03 }, WEIGHTS_V1);
-    const tooLarge = framingRaw({ ...GOOD, faceAreaRatio: 0.75 }, WEIGHTS_V1);
+    const ideal = rawOf({ ...GOOD, faceAreaRatio: 0.18 });
+    const tooSmall = rawOf({ ...GOOD, faceAreaRatio: 0.03 });
+    const tooLarge = rawOf({ ...GOOD, faceAreaRatio: 0.75 });
 
     expect(ideal).toBeGreaterThan(tooSmall);
     expect(ideal).toBeGreaterThan(tooLarge);
@@ -285,27 +296,27 @@ describe('framingRaw saturation', () => {
     ({ ...GOOD, faceAreaRatio: 0.18, faceCenterOffsetX: x, faceCenterOffsetY: 0 }) as ValidatedPixelFeatures;
 
   it('keeps badly cropped and catastrophically cropped apart', () => {
-    const bad = framingRaw(off(0.6), WEIGHTS_V1);
-    const worse = framingRaw(off(1.2), WEIGHTS_V1);
-    const awful = framingRaw(off(4), WEIGHTS_V1);
+    const bad = rawOf(off(0.6));
+    const worse = rawOf(off(1.2));
+    const awful = rawOf(off(4));
     expect(bad).toBeGreaterThan(worse);
     expect(worse).toBeGreaterThan(awful);
     expect(awful).toBeGreaterThan(0);
   });
 
   it('never saturates, however extreme the penalty', () => {
-    const extreme = framingRaw(off(1000), WEIGHTS_V1);
+    const extreme = rawOf(off(1000));
     expect(extreme).toBeGreaterThan(0);
     expect(Number.isFinite(extreme)).toBe(true);
   });
 
   it('still returns exactly 1 for ideal framing and 0 for no face', () => {
     expect(framingRaw(off(0), WEIGHTS_V1)).toBe(1);
-    expect(framingRaw({ ...GOOD, faceCount: 0 } as ValidatedPixelFeatures, WEIGHTS_V1)).toBe(0);
+    expect(framingRaw({ ...GOOD, faceCount: 0 } as ValidatedPixelFeatures, WEIGHTS_V1)).toBeNull();
   });
 
   it('is monotone decreasing in the penalty across a wide sweep', () => {
-    const values = [0, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4].map((x) => framingRaw(off(x), WEIGHTS_V1));
+    const values = [0, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4].map((x) => rawOf(off(x)));
     expect(values).toEqual([...values].sort((a, b) => b - a));
     expect(new Set(values).size).toBe(values.length);
   });
@@ -381,7 +392,14 @@ describe('a decline is a finding, not missing data', () => {
     'corrupt_file',
   ];
 
-  it.each(REASONS)('caps the composite when the judge declines %s', (reason) => {
+  /**
+   * GOOD carries a measured face, which contradicts a `no_face` decline
+   * and deliberately lifts its cap since v8. Every other reason is
+   * unaffected by the detector, so the cap must hold on GOOD for them.
+   */
+  const UNOPPOSED = REASONS.filter((reason) => reason !== 'no_face');
+
+  it.each(UNOPPOSED)('caps the composite when the judge declines %s', (reason) => {
     // GOOD is a photograph with nothing wrong with it: every computed
     // axis scores well, so without a cap the renormalised composite
     // comes out high. That is the bug - a group of five scored 7.6.
@@ -390,23 +408,43 @@ describe('a decline is a finding, not missing data', () => {
   });
 
   it('is impossible by construction, not by luck, for a declined photo to score well', () => {
-    for (const reason of REASONS) {
+    for (const reason of UNOPPOSED) {
       const best = score({ features: GOOD, declined: reason });
       // Nothing declined may reach the band a good photograph occupies.
       expect(best.score, reason).toBeLessThan(7);
     }
   });
 
-  it('reproduces the group-of-five case: no_face over a detected face', () => {
-    // The judge said no_face; SCRFD had found five. Previously this
-    // produced 7.6 because coverage dropped to partial and `solo` -
-    // the axis that exists to catch group shots - never ran.
+  it('caps a no_face decline the detector does not contradict', () => {
+    // No measured face, so the judge's no_face stands unopposed and the
+    // cap applies. This is the case the cap exists for.
+    const faceless = {
+      ...GOOD,
+      faceCount: 0,
+      faceAreaRatio: null,
+      faceCenterOffsetX: null,
+      faceCenterOffsetY: null,
+    } as ValidatedPixelFeatures;
+    expect(score({ features: faceless, declined: 'no_face' }).score).toBeLessThanOrEqual(
+      DECLINE_SCORE_CAP.no_face,
+    );
+  });
+
+  it('does NOT cap no_face when the detector measured a face', () => {
+    // The judge says there is no face; the detector measured one. Only
+    // one of them produced evidence, so this is reported as an
+    // incomplete assessment rather than a finding about the photograph.
+    // Capping here scored a perfectly good portrait 2/10 on a disputed
+    // claim - see the group selfie in the v8 regression set.
     const group = { ...GOOD, faceCount: 5 } as ValidatedPixelFeatures;
-    const before = score({ features: group });
     const after = score({ features: group, declined: 'no_face' });
 
-    expect(before.score).toBeGreaterThan(7);
-    expect(after.score).toBeLessThanOrEqual(DECLINE_SCORE_CAP.no_face);
+    expect(after.score).toBeGreaterThan(DECLINE_SCORE_CAP.no_face);
+    expect(after.coverage).toBe('partial');
+    // The judged axes are still absent - nothing was invented for them.
+    for (const axis of ['background', 'attire', 'expression', 'solo'] as const) {
+      expect(after.axes[axis]).toBeUndefined();
+    }
   });
 
   it('treats detector-vs-judge disagreement as a confidence problem too', () => {
@@ -423,8 +461,43 @@ describe('a decline is a finding, not missing data', () => {
     expect(conflicted.confidence).toBeCloseTo(DETECTOR_JUDGE_CONFLICT_CONFIDENCE, 10);
   });
 
-  it('floors framing when the judge says there is no face', () => {
-    expect(score({ features: GOOD, declined: 'no_face' }).axes['framing']).toBe(1);
+  it('reports no framing at all for an uncontradicted no_face, rather than flooring it to 1', () => {
+    // v7 floored this to 1. A floor is a score, and there was nothing to
+    // score: absent says what actually happened, and the cap still
+    // keeps the composite where a declined photograph belongs.
+    const faceless = {
+      ...GOOD,
+      faceCount: 0,
+      faceAreaRatio: null,
+      faceCenterOffsetX: null,
+      faceCenterOffsetY: null,
+    } as ValidatedPixelFeatures;
+    const result = score({ features: faceless, declined: 'no_face' });
+    expect(result.axes['framing']).toBeUndefined();
+    expect(result.score).toBeLessThanOrEqual(DECLINE_SCORE_CAP.no_face);
+  });
+
+  it('does not floor framing the detector actually measured', () => {
+    // A measured face is evidence against "no face". Flooring framing on
+    // the judge's word would let a disputed claim overwrite a real
+    // measurement.
+    const group = { ...GOOD, faceCount: 5 } as ValidatedPixelFeatures;
+    expect(score({ features: group, declined: 'no_face' }).axes['framing']).toBeGreaterThan(1);
+  });
+
+  it('omits framing entirely when no face qualified', () => {
+    const faceless = {
+      ...GOOD,
+      faceCount: 0,
+      faceAreaRatio: null,
+      faceCenterOffsetX: null,
+      faceCenterOffsetY: null,
+    } as ValidatedPixelFeatures;
+    const result = score({ features: faceless });
+    expect(result.axes['framing']).toBeUndefined();
+    // The axes that do not need a face survive.
+    expect(result.axes['sharpness']).toBeGreaterThan(0);
+    expect(result.axes['resolution']).toBeGreaterThan(0);
   });
 
   it('leaves an undeclined score alone, so the cap cannot leak', () => {
@@ -529,7 +602,7 @@ describe('framing level calibration', () => {
   });
 
   it('still floors a no-face photograph at framing 1', () => {
-    expect(framingRaw({ ...GOOD, faceCount: 0 } as ValidatedPixelFeatures, WEIGHTS_V1)).toBe(0);
+    expect(framingRaw({ ...GOOD, faceCount: 0 } as ValidatedPixelFeatures, WEIGHTS_V1)).toBeNull();
     expect(round(0)).toBe(1);
   });
 });

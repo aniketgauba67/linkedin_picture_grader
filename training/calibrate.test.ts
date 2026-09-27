@@ -37,7 +37,7 @@ function features(overrides: Record<string, unknown> = {}): Record<string, unkno
     faceCenterOffsetX: 0,
     faceCenterOffsetY: 0,
     faceCount: 1,
-    extractorVersion: 'v7',
+    extractorVersion: 'v8',
     ...overrides,
   };
 }
@@ -221,8 +221,19 @@ describe('describe (the standing distribution check)', () => {
     const labels: LabelRow[] = [];
     for (let i = 0; i < 40; i += 1) {
       const filename = `P${String(i).padStart(3, '0')}.jpg`;
-      // Every image has no face, so framingRaw floors at 0 for all.
-      lookup[filename] = { features: features({ faceCount: 0, faceAreaRatio: 0 }) as never };
+      // Every image has IDENTICAL framing geometry, so framingRaw takes
+      // one value across the whole set - which is the pile-up this
+      // warning exists to catch. (Before v8 the fixture used faceless
+      // images, which floored framingRaw to 0; a faceless image now has
+      // no framing scalar at all and is excluded rather than piled up.)
+      lookup[filename] = {
+        features: features({
+          faceCount: 1,
+          faceAreaRatio: 0.2,
+          faceCenterOffsetX: 0,
+          faceCenterOffsetY: 0,
+        }) as never,
+      };
       for (const axis of ['sharpness', 'lighting', 'resolution', 'framing'] as const) {
         labels.push({ filename, axis, score: (i % 4) + 1 });
       }

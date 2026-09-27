@@ -217,9 +217,14 @@ export async function extractFeatures(image: Buffer): Promise<ComputedFeatures> 
     width,
     height,
 
-    faceAreaRatio: clamp(framing.faceAreaRatio, 0, 1),
-    faceCenterOffsetX: clamp(framing.faceCenterOffsetX, -1, 1),
-    faceCenterOffsetY: clamp(framing.faceCenterOffsetY, -1, 1),
+    // Null when nothing qualified as the subject, NOT 0. `framingMetrics`
+    // returns zeroes for a null box, and writing those through claimed the
+    // face occupies none of the frame - a measurement, and a false one.
+    faceAreaRatio: face === null ? null : clamp(framing.faceAreaRatio, 0, 1),
+    faceCenterOffsetX: face === null ? null : clamp(framing.faceCenterOffsetX, -1, 1),
+    faceCenterOffsetY: face === null ? null : clamp(framing.faceCenterOffsetY, -1, 1),
+    // Every detection, qualifying or not. A face too small to measure
+    // geometry from is still a face in the frame.
     faceCount: faces.length,
 
     // Measured from the five keypoints.

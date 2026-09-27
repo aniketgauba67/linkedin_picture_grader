@@ -48,11 +48,19 @@ describe('qualifyingFaces', () => {
   });
 
   it('drops bystanders too small to be the subject', () => {
-    // 1% of a 1024x1024 frame is a ~102px box; 60px is well under.
-    const faces = [face(0, 0, 60), face(400, 400, 300)];
+    // 0.25% of a 1024x1024 frame is a ~51px box; 30px is well under.
+    const faces = [face(0, 0, 30), face(400, 400, 300)];
     const qualifying = qualifyingFaces(faces, FRAME, FRAME);
     expect(qualifying).toHaveLength(1);
     expect(qualifying[0]?.box.width).toBe(300);
+  });
+
+  it('keeps the small faces of a group photograph, which v7 discarded', () => {
+    // Six faces around 50px on a 1024x1024 frame: every one was below
+    // the old 1% gate, so the frame reported no usable face at all.
+    const group = [0, 1, 2, 3, 4, 5].map((i) => face(i * 120, i * 90, 55));
+    expect(qualifyingFaces(group, FRAME, FRAME).length).toBeGreaterThanOrEqual(5);
+    expect(primaryFace(group, FRAME, FRAME)).not.toBeNull();
   });
 
   it('puts the area boundary exactly where it is documented', () => {

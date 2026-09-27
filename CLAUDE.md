@@ -53,6 +53,32 @@ library. Pure functions only.
 - No `any`. No non-null assertions without a comment explaining why.
 - Every module gets a vitest file alongside it.
 - data/ and models/ are gitignored. Never commit images.
+## Extractor v8 (face eligibility and missing geometry)
+
+- minimum qualifying face area 0.25% of the frame, lowered from 1%
+- missing face geometry represented as null, never 0
+- framing unavailable when face geometry is unavailable
+- existing V1 framing knots carried forward without refitting
+
+At 1% a face had to be roughly 89x89px on the 1024-edge analysis plane.
+No face in a group photograph reaches that: a six-person photo detected
+all six at confidence 0.61-0.87 and every one was discarded, leaving no
+primary face. The extractor then wrote `faceAreaRatio: 0`, which does
+not mean "no face was found" - it means the face occupies none of the
+frame. That floored framing to 1 and produced the advice "your face
+fills 0% of the frame" for a photograph containing six faces.
+
+So `faceAreaRatio` and both centre offsets are now nullable, framing is
+absent rather than 1 when they are null, and the composite renormalises
+over the axes that exist. `faceCount` still reports every detection:
+detector count, qualifying count and primary-face availability are
+three different questions and must not be collapsed into one.
+
+The V1 framing calibration is carried forward to v8 deliberately and
+without refitting, pending independent validation. On the 125-image
+development corpus the change moves 10 images from no-usable-face to
+measured and alters 10 framing scores; nothing was fitted to that.
+
 ## Deployment gotchas
 
 Every item here was found the hard way, and every one of them passes a

@@ -158,3 +158,56 @@ describe('exhaustiveness', () => {
     expect(outcomes.map((outcome) => toView(outcome).kind)).toEqual(['scored', 'declined']);
   });
 });
+
+/**
+ * v8: the judge saying "no face" over a face the detector measured must
+ * never reach the user as "No face found in this photo."
+ *
+ * The Edge scorer stops that case becoming a decline at all - it
+ * becomes a scored result with partial coverage - so the assertion
+ * here is that the partial-coverage view says something truthful and
+ * says nothing about an absent face.
+ */
+describe('detector-vs-judge disagreement is not reported as a missing face', () => {
+  const partial: AnalysisOutcome = {
+    status: 'scored',
+    result: {
+      ...result,
+      coverage: 'partial',
+      axes: { sharpness: 4, lighting: 3, resolution: 5, framing: 2 },
+      confidence: 0.8,
+    },
+  };
+
+  it('renders as a score, not a decline', () => {
+    const view = toView(partial);
+    expect(view.kind).toBe('scored');
+    expect(view.reason).toBeNull();
+    expect(view.score).not.toBeNull();
+  });
+
+  it('never claims no face was found', () => {
+    const view = toView(partial);
+    const text = `${view.headline} ${view.detail} ${view.caveat ?? ''}`;
+    expect(text).not.toMatch(/no face/i);
+  });
+
+  it('says which part could not be verified', () => {
+    expect(toView(partial).caveat).toMatch(/presentation details could not be verified/i);
+  });
+
+  it('shows only the axes that were actually scored', () => {
+    const view = toView(partial);
+    const axes = [...view.rows.map((row) => row.axis)].sort();
+    expect(axes).toEqual(['framing', 'lighting', 'resolution', 'sharpness']);
+  });
+
+  it('omits framing entirely when it could not be measured', () => {
+    const noFraming: AnalysisOutcome = {
+      status: 'scored',
+      result: { ...result, coverage: 'partial', axes: { sharpness: 4, lighting: 3, resolution: 5 } },
+    };
+    const view = toView(noFraming);
+    expect(view.rows.map((row) => row.axis)).not.toContain('framing');
+  });
+});

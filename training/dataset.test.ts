@@ -34,7 +34,7 @@ function features(overrides: Partial<FeatureVector> = {}): FeatureVector {
     faceCenterOffsetX: 0, faceCenterOffsetY: 0, faceCount: 1,
     yaw: 0, roll: 0, pitch: null, eyeOpenness: null, smileIntensity: null,
     primaryFaceConfidence: 0.9, secondLargestFaceRatio: null,
-    isGrayscale: false, aspectExtreme: false, sourceFormat: 'jpeg', extractorVersion: 'v7',
+    isGrayscale: false, aspectExtreme: false, sourceFormat: 'jpeg', extractorVersion: 'v8',
     ...overrides,
   });
 }
@@ -48,7 +48,7 @@ function image(id: string, hash: string, phash = '0000000000000000', role: 'deve
     source_url: null, creator: null, license: 'fixture', license_url: null,
     sha256: hash, perceptual_hash: phash, dataset_role: role, cohort: 'fixture',
     source_group: null, creator_group: null, duplicate_of: null, split_group: id,
-    width: 600, height: 750, mime_type: 'image/jpeg', extractor_version: 'v7',
+    width: 600, height: 750, mime_type: 'image/jpeg', extractor_version: 'v8',
     feature_status: 'ready', vlm_status: 'pending', human_label_status: 'none',
     eligible_for_product_scoring: true, eligibility_reason: null });
 }
@@ -201,7 +201,7 @@ describe('offline batch stages', () => {
     const result = await processBatch([source('A', file)], { root: out, extract });
     expect(result.featureExtracted).toBe(1);
     expect(extract).toHaveBeenCalledOnce();
-    expect(FeatureArtifact.parse(JSON.parse(readFileSync(join(stale, `${hash}.v7.json`), 'utf8'))).extractor_version).toBe('v7');
+    expect(FeatureArtifact.parse(JSON.parse(readFileSync(join(stale, `${hash}.v8.json`), 'utf8'))).extractor_version).toBe('v8');
   });
 
   it('retries a failed VLM stage without re-extracting, and ignores an old model/rubric artifact', async () => {

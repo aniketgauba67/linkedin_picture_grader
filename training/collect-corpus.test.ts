@@ -52,7 +52,7 @@ function features(width = 1880, height = 2820): Record<string, unknown> {
     isGrayscale: false,
     aspectExtreme: false,
     sourceFormat: 'jpeg',
-    extractorVersion: 'v7',
+    extractorVersion: 'v8',
   };
 }
 

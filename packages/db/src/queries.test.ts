@@ -44,7 +44,7 @@ const features: ComputedFeatures = {
   isGrayscale: false,
   aspectExtreme: false,
   sourceFormat: 'jpeg',
-  extractorVersion: 'v7',
+  extractorVersion: 'v8',
 };
 
 const assessed: RubricResponse = {
@@ -180,9 +180,9 @@ describe('getFeaturesByHash', () => {
 
   it('keys on the extractor version it was asked for', async () => {
     const fake = createFakeClient([{ data: null }]);
-    await getFeaturesByHash(fake.client, 'hash-1', 'v7');
+    await getFeaturesByHash(fake.client, 'hash-1', 'v8');
     const filters = fake.calls.filter((call) => call.method === 'eq').map((call) => call.args);
-    expect(filters).toContainEqual(['extractor_version', 'v7']);
+    expect(filters).toContainEqual(['extractor_version', 'v8']);
   });
 
   it('refuses a cached vector whose sharpness basis flag disagrees', async () => {
@@ -366,23 +366,23 @@ describe('insertScore', () => {
 describe('claimExtraction', () => {
   it('returns the owner token for a winner', async () => {
     const fake = createFakeClient([{ data: 'claim-token' }]);
-    expect(await claimExtraction(fake.client, 'photo-1', 'verified-sha', 'v7')).toBe('claim-token');
+    expect(await claimExtraction(fake.client, 'photo-1', 'verified-sha', 'v8')).toBe('claim-token');
   });
 
   it('returns null for a loser', async () => {
     const fake = createFakeClient([{ data: null }]);
-    expect(await claimExtraction(fake.client, 'photo-1', 'verified-sha', 'v7')).toBeNull();
+    expect(await claimExtraction(fake.client, 'photo-1', 'verified-sha', 'v8')).toBeNull();
   });
 
   it('passes the verified SHA, version and two-minute stale window', async () => {
     const fake = createFakeClient([{ data: 'claim-token' }]);
-    await claimExtraction(fake.client, 'photo-1', 'verified-sha', 'v7');
+    await claimExtraction(fake.client, 'photo-1', 'verified-sha', 'v8');
     expect(fake.argsFor('rpc')).toEqual([
       'claim_extraction',
       {
         p_photo_id: 'photo-1',
         p_sha256: 'verified-sha',
-        p_extractor_version: 'v7',
+        p_extractor_version: 'v8',
         p_stale_after: '2 minutes',
       },
     ]);
@@ -390,10 +390,10 @@ describe('claimExtraction', () => {
 
   it('releases only the owned content/version claim', async () => {
     const fake = createFakeClient([{ data: undefined }]);
-    await releaseExtraction(fake.client, 'verified-sha', 'v7', 'claim-token');
+    await releaseExtraction(fake.client, 'verified-sha', 'v8', 'claim-token');
     expect(fake.argsFor('rpc')).toEqual([
       'release_extraction',
-      { p_sha256: 'verified-sha', p_extractor_version: 'v7', p_claim_token: 'claim-token' },
+      { p_sha256: 'verified-sha', p_extractor_version: 'v8', p_claim_token: 'claim-token' },
     ]);
   });
 

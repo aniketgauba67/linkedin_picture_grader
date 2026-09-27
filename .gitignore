@@ -64,6 +64,11 @@ models/*
 # Everything else image-shaped stays out.
 !packages/features/fixtures/
 !packages/features/fixtures/portrait.jpg
+# Six copies of that same public-domain portrait on a plain canvas, each
+# between the old 1% and the new 0.25% face-area gate. It is the v8
+# group-photo regression, and it is synthetic precisely so no real
+# group photograph of identifiable people has to live in the repository.
+!packages/features/fixtures/group-small-faces.jpg
 
 # Supabase local stack
 supabase/.branches/
@@ -77,3 +82,10 @@ supabase/.temp/
 !.vscode/extensions.json
 .vercel
 .env*
+
+# Agent and tooling scratch state. Local to one machine and never part of
+# a build, but untracked-AND-unignored means it sits in every `git status`
+# forever and one `git add -A` commits it. `:memory:*.ses` is a stray
+# session file from a SQLite ":memory:" path taken literally.
+.claude-flow/
+:memory:*.ses

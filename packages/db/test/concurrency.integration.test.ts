@@ -11,7 +11,7 @@ import {
 
 const SHA_A = 'a'.repeat(64);
 const SHA_B = 'b'.repeat(64);
-const VERSION = 'v7';
+const VERSION = 'v8';
 
 async function seedPhoto(client: pg.Client, sha256 = SHA_A): Promise<string> {
   return seedPhotoRaw(client, { sha256 });
@@ -216,7 +216,9 @@ suite('claim_extraction under concurrency', () => {
     const photoA = await seedPhoto(setup);
     const photoB = await seedPhoto(setup);
     const results = await Promise.all([
-      claim(a, photoA, SHA_A, 'v7'), claim(b, photoB, SHA_A, 'v8'),
+      // Two DIFFERENT extractor versions over the same bytes: the point
+      // is that they claim independently, so these must not be equal.
+      claim(a, photoA, SHA_A, 'v8'), claim(b, photoB, SHA_A, 'v9'),
     ]);
     expect(results.every((token) => token !== null)).toBe(true);
   });

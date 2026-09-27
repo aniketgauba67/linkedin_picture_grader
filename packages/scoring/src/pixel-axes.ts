@@ -27,9 +27,13 @@ export interface PixelFeatures {
   readonly faceRegionMeasured: boolean;
   readonly clippedHighlights: number;
   readonly clippedShadows: number;
-  readonly faceAreaRatio: number;
-  readonly faceCenterOffsetX: number;
-  readonly faceCenterOffsetY: number;
+  /**
+   * Null when no face qualified as the subject. Mirrors @pps/schema:
+   * missing geometry is absent, never a measured zero.
+   */
+  readonly faceAreaRatio: number | null;
+  readonly faceCenterOffsetX: number | null;
+  readonly faceCenterOffsetY: number | null;
   readonly faceCount: number;
   readonly extractorVersion: string;
 }
@@ -47,7 +51,12 @@ export type ValidatedPixelFeatures = PixelFeatures & {
   readonly __validated: 'assertFeaturesUsable';
 };
 
-/** Magnitude of the signed face offset, as a fraction of the frame. */
-export function faceCenterOffset(features: PixelFeatures): number {
-  return Math.hypot(features.faceCenterOffsetX, features.faceCenterOffsetY);
+/**
+ * Magnitude of the signed face offset, as a fraction of the frame, or
+ * null when the offset was never measured.
+ */
+export function faceCenterOffset(features: PixelFeatures): number | null {
+  const { faceCenterOffsetX: x, faceCenterOffsetY: y } = features;
+  if (x === null || y === null) return null;
+  return Math.hypot(x, y);
 }

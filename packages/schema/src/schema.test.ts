@@ -218,6 +218,11 @@ describe('ComputedFeatures', () => {
       'smileIntensity',
       'primaryFaceConfidence',
       'secondLargestFaceRatio',
+      // Extractor v8: null when no face qualified as the subject. A
+      // zero here used to claim the face occupied none of the frame.
+      'faceAreaRatio',
+      'faceCenterOffsetX',
+      'faceCenterOffsetY',
     ]);
     for (const field of NUMERIC_FEATURE_FIELDS) {
       const patch: Record<string, unknown> = { ...usable, [field]: null };

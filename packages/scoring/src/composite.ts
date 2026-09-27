@@ -39,12 +39,23 @@ export function meanToComposite(mean: number): number {
   return COMPOSITE_MIN + (mean - AXIS_MIN) * span;
 }
 
+/**
+ * Renormalises over the axes actually present, which since extractor v8
+ * can exclude `framing` when no face qualified. With every axis present
+ * the weights sum to 1 and this is the plain weighted mean it always
+ * was; the divide only bites in the new case, and dividing by the weight
+ * actually used is the same rule `composeScore` follows.
+ */
 export function weightedMean(scores: AxisScores, weights: AxisWeights): number {
   let total = 0;
+  let weightSum = 0;
   for (const axis of AXES) {
-    total += normalizeAxisScore(scores[axis]) * weights[axis];
+    const value = scores[axis];
+    if (value === undefined) continue;
+    total += normalizeAxisScore(value) * weights[axis];
+    weightSum += weights[axis];
   }
-  return total;
+  return weightSum <= 0 ? 0 : total / weightSum;
 }
 
 /** Per-axis detail. Exported because the UI shows it; not part of ScoreResult. */
@@ -55,15 +66,22 @@ export function axisBreakdown(
   const weights = weightsFor(context);
   const compositeSpan = (COMPOSITE_MAX - COMPOSITE_MIN) / (AXIS_MAX - AXIS_MIN);
 
-  return AXES.map((axis) => {
-    const score = normalizeAxisScore(scores[axis]);
+  // An absent axis is omitted rather than shown as a zero row: the UI
+  // renders this list, and a framing row reading 0 would be the same
+  // fabricated measurement in a different place.
+  return AXES.flatMap((axis) => {
+    const value = scores[axis];
+    if (value === undefined) return [];
+    const score = normalizeAxisScore(value);
     const weight = weights[axis];
-    return {
-      axis,
-      score,
-      weight,
-      contribution: roundTo(score * weight, 4),
-      headroom: roundTo((AXIS_MAX - score) * weight * compositeSpan, 4),
-    };
+    return [
+      {
+        axis,
+        score,
+        weight,
+        contribution: roundTo(score * weight, 4),
+        headroom: roundTo((AXIS_MAX - score) * weight * compositeSpan, 4),
+      },
+    ];
   });
 }

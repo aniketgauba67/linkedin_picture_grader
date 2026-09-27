@@ -50,15 +50,25 @@ export function bandPenalty(
  *
  * FIT THE FRAMING MAP OVER THIS VALUE, never over faceAreaRatio.
  */
-export function framingRaw(features: PixelFeatures, weights: Weights): number {
-  if (features.faceCount === 0 || features.faceAreaRatio <= 0) {
-    return 0;
+export function framingRaw(features: PixelFeatures, weights: Weights): number | null {
+  const { faceAreaRatio, faceCenterOffsetX, faceCenterOffsetY } = features;
+  // NULL, NOT 0. No qualifying face means framing was never measured, and
+  // 0 here is the worst possible framing - a score, not an absence. The
+  // composite renormalises over the axes that exist, so an absent framing
+  // costs the photograph nothing it did not earn.
+  if (
+    features.faceCount === 0 ||
+    faceAreaRatio === null ||
+    faceCenterOffsetX === null ||
+    faceCenterOffsetY === null
+  ) {
+    return null;
   }
   const { idealRatioMin, idealRatioMax, offsetTolerance, ratioPenaltyScale, offsetPenaltyScale } =
     weights.framing;
 
-  const ratio = bandPenalty(features.faceAreaRatio, idealRatioMin, idealRatioMax, ratioPenaltyScale);
-  const offset = Math.hypot(features.faceCenterOffsetX, features.faceCenterOffsetY);
+  const ratio = bandPenalty(faceAreaRatio, idealRatioMin, idealRatioMax, ratioPenaltyScale);
+  const offset = Math.hypot(faceCenterOffsetX, faceCenterOffsetY);
   const off = bandPenalty(offset, 0, offsetTolerance, offsetPenaltyScale);
 
   // `1 / (1 + penalty)`, NOT `clamp01(1 - penalty)`.
@@ -164,8 +174,9 @@ export function resolutionScore(features: PixelFeatures, weights: Weights): numb
   return applyIsotonic(shorterEdge(features), weights.maps.resolution);
 }
 
-export function framingScore(features: PixelFeatures, weights: Weights): number {
-  return applyIsotonic(framingRaw(features, weights), weights.maps.framing);
+export function framingScore(features: PixelFeatures, weights: Weights): number | null {
+  const raw = framingRaw(features, weights);
+  return raw === null ? null : applyIsotonic(raw, weights.maps.framing);
 }
 
 function clampAxis(value: number): number {
@@ -179,18 +190,25 @@ export function sharpnessBasis(features: PixelFeatures): 'eyeRegion' | 'frame' {
     : 'frame';
 }
 
-export type ComputedAxisScores = Readonly<Record<'sharpness' | 'lighting' | 'resolution' | 'framing', number>>;
+/**
+ * `framing` is optional: it is the one computed axis that needs a face,
+ * and it is absent rather than zero when no face qualified.
+ */
+export type ComputedAxisScores = Readonly<
+  Record<'sharpness' | 'lighting' | 'resolution', number> & { framing?: number }
+>;
 
 /** The four axes that come from pixels. No model involved. */
 export function computeComputedAxes(
   features: ValidatedPixelFeatures,
   weights: Weights,
 ): ComputedAxisScores {
+  const framing = framingScore(features, weights);
   return {
     sharpness: sharpnessScore(features, weights),
     lighting: lightingScore(features, weights),
     resolution: resolutionScore(features, weights),
-    framing: framingScore(features, weights),
+    ...(framing === null ? {} : { framing }),
   };
 }
 
@@ -205,12 +223,13 @@ export function computeAxisScores(
   weights: Weights,
 ): AxisScores {
   const computed = computeComputedAxes(features, weights);
-  const all: Record<AxisName, number> = {
+  // `framing` may be absent; every other axis is always present.
+  const all: Partial<Record<AxisName, number>> = {
     ...computed,
     background: judged.background,
     attire: judged.attire,
     expression: judged.expression,
     solo: judged.solo,
   };
-  return all;
+  return all as AxisScores;
 }

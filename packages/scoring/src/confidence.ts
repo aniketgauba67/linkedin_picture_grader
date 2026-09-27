@@ -93,7 +93,10 @@ export function computeConfidence(
 
   // A face crammed against an edge is usually a crop, and a crop hides
   // whatever was cropped out.
-  if (features.faceCount > 0 && faceCenterOffset(features) > 0.35) {
+  // Over the offset that exists. An unmeasured offset contributes
+  // nothing, exactly as a null pitch does above.
+  const offset = faceCenterOffset(features);
+  if (offset !== null && offset > 0.35) {
     confidence -= 0.1;
   }
 

@@ -2,6 +2,7 @@
 
 import {
   computeConfidence,
+  detectorJudgeConflict,
   isContext,
   score,
   WEIGHTS_V1,
@@ -296,6 +297,30 @@ Deno.serve(async (request: Request): Promise<Response> => {
       confidence: computeConfidence(computed, { soloScore: null }),
       declined: verdict.reason,
     });
+    /**
+     * The judge says there is no face; the detector measured one.
+     *
+     * Two observers of the same question disagree, and only one of them
+     * produced evidence we can point at - a qualifying face box, which
+     * is what a non-null faceAreaRatio records. Telling the user "No
+     * face found in this photo" over a measured face asserts something
+     * we can see is false, so this is NOT reported as a decline.
+     *
+     * It is reported as what it actually is: the computed axes stand,
+     * the four judged axes are missing because the judge never produced
+     * them, and `coverage: 'partial'` already carries exactly that. No
+     * semantic axis is invented, no Claude score is fabricated, and the
+     * rubric is untouched. `score()` withholds the decline cap and the
+     * framing floor for the same reason, and lowers confidence.
+     */
+    if (detectorJudgeConflict(computed, verdict.reason)) {
+      try {
+        await persistScore(photoId, result);
+      } catch (error) {
+        return internalFailure('score persistence', error);
+      }
+      return json({ status: 'scored', result });
+    }
     try {
       await persistScore(photoId, result);
     } catch (error) {

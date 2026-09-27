@@ -746,13 +746,18 @@ export function selectHumanCandidates(root: string, limit = 100): LabelCandidate
     { name: 'sharpness', read: (f: FeatureVector): number => Math.log1p(f.sharpnessEyeRegion ?? f.sharpnessLaplacian) },
     { name: 'lighting', read: (f: FeatureVector): number => lightingRaw(f, WEIGHTS_V1) },
     { name: 'resolution', read: (f: FeatureVector): number => Math.log1p(Math.min(f.width, f.height)) },
-    { name: 'framing', read: (f: FeatureVector): number => framingRaw(f, WEIGHTS_V1) },
+    { name: 'framing', read: (f: FeatureVector): number | null => framingRaw(f, WEIGHTS_V1) },
   ];
   const values = dimensions.map((dimension) => items.map((item) => dimension.read(item.features)));
   const bins = values.map((series) => {
-    const low = Math.min(...series);
-    const high = Math.max(...series);
-    return series.map((value) => high === low ? 0 : Math.min(7, Math.floor(((value - low) / (high - low)) * 8)));
+    // Range over the measured values only: an unmeasurable framing is not
+    // a low framing, and letting it stretch the bin edges would be the
+    // same imputation this file exists to avoid.
+    const measured = series.filter((v): v is number => v !== null);
+    const low = measured.length === 0 ? 0 : Math.min(...measured);
+    const high = measured.length === 0 ? 0 : Math.max(...measured);
+    return series.map((value) =>
+      value === null || high === low ? 0 : Math.min(7, Math.floor(((value - low) / (high - low)) * 8)));
   });
   const labeledFrequencies = bins.map((series, at) => count(series.flatMap((bucket, index) => {
     const item = items[index];

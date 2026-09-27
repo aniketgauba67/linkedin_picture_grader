@@ -33,8 +33,22 @@ export interface Detector {
 /** Detections below this are not considered as the subject. */
 export const MIN_FACE_CONFIDENCE = 0.5;
 
-/** Nor are detections smaller than this fraction of the frame. */
-export const MIN_FACE_AREA_RATIO = 0.01;
+/**
+ * Nor are detections smaller than this fraction of the frame.
+ *
+ * 0.25%, lowered from 1% in extractor v8. At 1% a face had to be roughly
+ * 89x89 px on the 1024-edge analysis plane, which no face in a group
+ * photograph reaches: a six-person photo detected all six at confidence
+ * 0.61-0.87 and every one was discarded here, leaving no primary face at
+ * all. On the 125-image development corpus that gate reported no usable
+ * face for 20 images; at 0.25% it reports 10, with no change to the
+ * single-face fixture or to a three-face selfie.
+ *
+ * This bounds SELECTION, not detection. `faceCount` still reports every
+ * detection, so a face below this threshold is a face the scorer will not
+ * measure geometry from - never a face it claims does not exist.
+ */
+export const MIN_FACE_AREA_RATIO = 0.0025;
 
 /** Boxes within this much of each other in area count as tied. */
 export const AREA_TIE_TOLERANCE = 0.05;

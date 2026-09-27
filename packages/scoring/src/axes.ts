@@ -24,7 +24,14 @@ export const AXIS_MAX = 5;
 export const COMPOSITE_MIN = 1;
 export const COMPOSITE_MAX = 10;
 
-export type AxisScores = Readonly<Record<AxisName, number>>;
+/**
+ * `framing` is optional because it is the one axis that needs a face:
+ * when no face qualified as the subject it is absent, not zero. Every
+ * consumer already renormalises over the axes actually present.
+ */
+export type AxisScores = Readonly<Omit<Record<AxisName, number>, 'framing'>> & {
+  readonly framing?: number;
+};
 
 /** What each axis measures, and what "5" means for it. */
 export const AXIS_DESCRIPTIONS: Readonly<Record<AxisName, string>> = {

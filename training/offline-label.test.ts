@@ -33,7 +33,7 @@ function features(overrides: Partial<FeatureVector> = {}): FeatureVector {
     faceCenterOffsetX: 0, faceCenterOffsetY: 0, faceCount: 1,
     yaw: 0, roll: 0, pitch: null, eyeOpenness: null, smileIntensity: null,
     primaryFaceConfidence: 0.9, secondLargestFaceRatio: null,
-    isGrayscale: false, aspectExtreme: false, sourceFormat: 'jpeg', extractorVersion: 'v7',
+    isGrayscale: false, aspectExtreme: false, sourceFormat: 'jpeg', extractorVersion: 'v8',
     ...overrides,
   });
 }

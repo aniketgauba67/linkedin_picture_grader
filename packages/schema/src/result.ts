@@ -52,10 +52,19 @@ export const ScoreResult = z
   })
   .superRefine((value, ctx) => {
     const present = Object.keys(value.axes);
-    const required =
+    /**
+     * `framing` is the one axis that can be legitimately absent at any
+     * coverage: since extractor v8 it exists only when a face qualified
+     * as the subject, and a photograph with no usable face has no
+     * framing to report rather than a framing of 1. Coverage describes
+     * whether the JUDGE ran; it cannot promise a measurement the pixels
+     * did not contain.
+     */
+    const required = (
       value.coverage === 'full'
         ? AxisName.options
-        : (['sharpness', 'lighting', 'resolution', 'framing'] as const);
+        : (['sharpness', 'lighting', 'resolution', 'framing'] as const)
+    ).filter((axis) => axis !== 'framing');
 
     for (const axis of required) {
       if (value.axes[axis] === undefined) {

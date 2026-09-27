@@ -168,12 +168,20 @@ export interface ScoreInput {
   readonly maxFixes?: number;
 }
 
-/** True when the judge saw no face and the detector found one anyway. */
+/**
+ * True when the judge saw no face and the detector measured one anyway.
+ *
+ * `faceCount > 0` alone is too weak a contradiction: the detector can
+ * return a detection too small to measure geometry from, and that is not
+ * evidence against the judge. The conflict is real only when a face
+ * actually qualified as the subject, which is exactly what a non-null
+ * `faceAreaRatio` records.
+ */
 export function detectorJudgeConflict(
   features: ValidatedPixelFeatures,
   declined: DeclineReason | undefined,
 ): boolean {
-  return declined === 'no_face' && features.faceCount > 0;
+  return declined === 'no_face' && features.faceCount > 0 && features.faceAreaRatio !== null;
 }
 
 /**
@@ -220,15 +228,29 @@ export function score(input: ScoreInput): ScoreResultShape {
     rounded[axis] = Math.min(AXIS_MAX, Math.max(AXIS_MIN, Math.round(value)));
   }
 
-  // A decline that says something about the PHOTOGRAPH floors the axis
-  // it is about, so the fix list names the real problem rather than
-  // whichever computed axis happened to score lowest.
-  if (declined === 'no_face' && rounded.framing !== undefined) {
-    rounded.framing = AXIS_MIN;
-  }
+  /**
+   * v7 floored framing to 1 on a `no_face` decline, so the fix list named
+   * the real problem instead of whichever computed axis scored lowest.
+   *
+   * That branch is gone because it became unreachable, not because the
+   * intent changed. Since v8 a framing score exists only when a face
+   * qualified - and a qualifying face is exactly what makes a `no_face`
+   * decline contradicted. So whenever framing is present the decline is
+   * disputed and must not floor it, and whenever the decline stands
+   * unopposed there is no framing score to floor. The two conditions
+   * cannot both hold.
+   *
+   * The user-facing outcome is unchanged for a genuine no-face image:
+   * framing is absent rather than 1, which the composite renormalises
+   * over, and the decline cap still applies.
+   */
 
   const composed = composeScore(rounded, context);
-  const cap = declined === undefined ? COMPOSITE_MAX : DECLINE_SCORE_CAP[declined];
+  // A contradicted no_face is not a finding about the photograph, so it
+  // carries no cap. The four judged axes are still missing - the judge
+  // never produced them - which `coverage: 'partial'` already says.
+  const cap =
+    declined === undefined || conflict ? COMPOSITE_MAX : DECLINE_SCORE_CAP[declined];
 
   return {
     // The cap is applied to the COMPOSITE, after renormalising, because

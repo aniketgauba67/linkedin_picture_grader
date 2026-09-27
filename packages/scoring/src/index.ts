@@ -70,6 +70,7 @@ export {
   WeightsVersionError,
   axisBreakdown,
   composeScore,
+  detectorJudgeConflict,
   meanToComposite,
   score,
   weightedMean,

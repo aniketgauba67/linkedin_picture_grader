@@ -24,7 +24,7 @@ const vector = {
   faceCenterOffsetY: -0.03,
   faceCount: 1,
   exposureMean: 128,
-  extractorVersion: 'v7',
+  extractorVersion: 'v8',
   yaw: 2,
   pitch: null,
   roll: 1,
@@ -92,7 +92,7 @@ async function setup(
       const response = Response.json([]);
       // Model the decoded PostgREST row directly so non-finite values can
       // exercise the Edge trust boundary even though JSON cannot encode them.
-      vi.spyOn(response, 'json').mockResolvedValue([{ computed, extractor_version: 'v7' }]);
+      vi.spyOn(response, 'json').mockResolvedValue([{ computed, extractor_version: 'v8' }]);
       return response;
     }
     if (url.pathname.endsWith('/assessments')) {

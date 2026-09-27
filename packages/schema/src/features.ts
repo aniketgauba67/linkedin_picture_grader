@@ -5,7 +5,7 @@ import { z } from 'zod';
  * column next to the cached vector, not as a field of the vector, so an
  * older row is detected and re-extracted rather than silently mis-scored.
  */
-export const FEATURE_VECTOR_VERSION = 7;
+export const FEATURE_VECTOR_VERSION = 8;
 
 /**
  * The cache key for an extraction, derived from the version rather than
@@ -117,15 +117,34 @@ export const ComputedFeatures = z.object({
   height: z.number().finite().int().positive(),
 
   // --- framing -------------------------------------------------------
-  /** Face box area over frame area. */
-  faceAreaRatio: z.number().finite().min(0).max(1),
+  /**
+   * Face box area over frame area, or NULL when no face qualified as the
+   * subject.
+   *
+   * NULL IS NOT ZERO, and this field is the reason extractor v8 exists.
+   * Until v8 a missing primary face was written out as 0, which reads as
+   * "the face occupies none of the frame" - a measurement, and a false
+   * one. It floored framing to 1 and produced the advice "your face
+   * fills 0% of the frame" for a photograph of six people. An absent
+   * measurement now says so, exactly as `pitch` and `eyeOpenness`
+   * already do.
+   *
+   * A real 0 is unreachable here: a qualifying face has non-zero area by
+   * construction. Measured zeroes elsewhere in this vector - no clipped
+   * highlights, no detected faces - remain ordinary values.
+   */
+  faceAreaRatio: z.number().finite().min(0).max(1).nullable(),
   /**
    * Signed offset of the face centre from the frame centre, as a fraction
    * of the frame's width and height. Signed because direction matters:
    * slightly high is good composition, slightly low is not.
+   *
+   * Null under exactly the same condition as `faceAreaRatio`, and 0 here
+   * is a genuine measurement: a perfectly centred face.
    */
-  faceCenterOffsetX: z.number().finite().min(-1).max(1),
-  faceCenterOffsetY: z.number().finite().min(-1).max(1),
+  faceCenterOffsetX: z.number().finite().min(-1).max(1).nullable(),
+  faceCenterOffsetY: z.number().finite().min(-1).max(1).nullable(),
+  /** Every detection the detector returned, qualifying or not. */
   faceCount: z.number().finite().int().nonnegative(),
 
   // --- head pose and landmarks (MediaPipe) ---------------------------
@@ -252,9 +271,9 @@ export const FEATURE_RULES: Readonly<Record<NumericFeatureField, FieldRule>> = {
   exposureDelta: { min: -255, max: 255 },
   width: { min: 1, max: Number.MAX_SAFE_INTEGER, int: true },
   height: { min: 1, max: Number.MAX_SAFE_INTEGER, int: true },
-  faceAreaRatio: { min: 0, max: 1 },
-  faceCenterOffsetX: { min: -1, max: 1 },
-  faceCenterOffsetY: { min: -1, max: 1 },
+  faceAreaRatio: { min: 0, max: 1, nullable: true },
+  faceCenterOffsetX: { min: -1, max: 1, nullable: true },
+  faceCenterOffsetY: { min: -1, max: 1, nullable: true },
   faceCount: { min: 0, max: Number.MAX_SAFE_INTEGER, int: true },
   yaw: { min: -180, max: 180 },
   roll: { min: -180, max: 180 },

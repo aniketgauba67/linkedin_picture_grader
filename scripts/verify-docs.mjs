@@ -22,6 +22,16 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CLAIMS = [
   // --- 2a05c6e: deployment gotchas ---
   ['CLAUDE.md', 'deployment gotchas section exists', '## Deployment gotchas'],
+
+  // --- extractor v8: face eligibility and missing geometry ---
+  ['CLAUDE.md', 'v8 section exists', '## Extractor v8'],
+  ['CLAUDE.md', 'v8 names the new gate', 'minimum qualifying face area 0.25%'],
+  ['CLAUDE.md', 'v8 says missing geometry is null', 'missing face geometry represented as null, never 0'],
+  ['CLAUDE.md', 'v8 says framing goes absent', 'framing unavailable when face geometry is unavailable'],
+  ['CLAUDE.md', 'v8 says the knots were carried forward', 'carried forward without refitting'],
+  ['packages/features/src/face.ts', 'the gate explains what it bounds', 'This bounds SELECTION, not detection'],
+  ['packages/schema/src/features.ts', 'faceAreaRatio names the bug it fixes', 'NULL IS NOT ZERO'],
+  ['packages/scoring/src/weights/v1.ts', 'v8 compatibility is documented as deliberate', 'without refitting pending independent validation'],
   ['CLAUDE.md', 'local vercel build does not reproduce the trace', 'does not reproduce the real file trace'],
   ['CLAUDE.md', 'the measured bundle size', '36.86MB'],
   ['CLAUDE.md', 'Vercel needs Git LFS enabled', 'Vercel needs Git LFS switched on'],

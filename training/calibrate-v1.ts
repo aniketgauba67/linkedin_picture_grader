@@ -104,8 +104,17 @@ export function currentPrediction(axis: ComputedAxis, features: PixelFeatures): 
       return lightingScore(validated, WEIGHTS_V1);
     case 'resolution':
       return resolutionScore(validated, WEIGHTS_V1);
-    case 'framing':
-      return framingScore(validated, WEIGHTS_V1);
+    case 'framing': {
+      const framing = framingScore(validated, WEIGHTS_V1);
+      // Not imputed. `buildPopulation` already drops rows whose driving
+      // scalar is missing, so an unmeasurable framing cannot reach here -
+      // and if it ever does that is a bug to see, not a zero to average
+      // into the comparison.
+      if (framing === null) {
+        throw new Error('framing is unmeasurable for a row that reached currentPrediction');
+      }
+      return framing;
+    }
     default: {
       const unreachable: never = axis;
       throw new Error(`Unknown axis ${String(unreachable)}`);

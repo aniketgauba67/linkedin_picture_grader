@@ -31,6 +31,8 @@ export interface AxisRow {
  * no workaround - it is the one outcome that is not a retake away.
  */
 const DECLINE_COPY: Readonly<Record<DeclineReason, string>> = {
+  // Only reached when the detector agrees: a contradicted no_face never
+  // becomes a decline at all, it becomes a partial score.
   no_face:
     'No face was found in this image. Upload a photo of yourself and it will be scored.',
   apparent_minor: 'This service only scores photos of adults.',
@@ -72,7 +74,7 @@ export function toView(outcome: AnalysisOutcome): OutcomeView {
       // the part the person can do something about.
       rows: score === undefined ? [] : axisRows(score),
       fixes: score?.fixes ?? [],
-      caveat: score === undefined ? null : caveatFor(score),
+      caveat: score === undefined ? null : caveatFor(score, 'declined'),
     }),
   });
 }
@@ -92,7 +94,24 @@ export function axisRows(result: ScoreResult): readonly AxisRow[] {
   return rows.sort((a, b) => a.score - b.score);
 }
 
-function caveatFor(result: ScoreResult): string | null {
+/**
+ * `declined` is the decline copy's job: it already names the reason in
+ * the detail line, and adding "some details could not be verified"
+ * underneath it says the same thing twice.
+ */
+function caveatFor(result: ScoreResult, kind: 'scored' | 'declined' = 'scored'): string | null {
+  /**
+   * A SCORED result with partial coverage is the disagreement case: the
+   * judge declined `no_face` and the detector measured a face, so the
+   * Edge scorer refused to turn that into a decline.
+   *
+   * Say what is actually missing, and nothing about faces. The copy
+   * this replaces was "No face found in this photo.", asserted over a
+   * face we had measured - the one claim we can see is untrue.
+   */
+  if (kind === 'scored' && result.coverage === 'partial') {
+    return 'Some presentation details could not be verified for this photo, so only the measured qualities are scored.';
+  }
   if (result.confidence >= LOW_CONFIDENCE) {
     return null;
   }

@@ -21,7 +21,7 @@ const certain: ConfidenceInputs = {
   faceCenterOffsetY: -0.03,
   faceCount: 1,
   exposureMean: 128,
-  extractorVersion: 'v7',
+  extractorVersion: 'v8',
   yaw: 2,
   pitch: -3,
 };

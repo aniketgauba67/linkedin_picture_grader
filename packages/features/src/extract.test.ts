@@ -77,6 +77,10 @@ describe('extractFeatures', () => {
       'smileIntensity',
       'primaryFaceConfidence',
       'secondLargestFaceRatio',
+      // v8: null when no face qualified as the subject. Noise has none.
+      'faceAreaRatio',
+      'faceCenterOffsetX',
+      'faceCenterOffsetY',
     ]);
     const features = await extractFeatures(await noise(400, 400));
     for (const field of NUMERIC_FEATURE_FIELDS) {
@@ -107,11 +111,24 @@ describe('extractFeatures', () => {
   it('reports the eye region as unmeasurable, not zero, with no detector', async () => {
     const features = await extractFeatures(await noise(400, 400));
     expect(features.faceCount).toBe(0);
-    expect(features.faceAreaRatio).toBe(0);
     expect(features.sharpnessEyeRegion).toBeNull();
     expect(features.eyeRegionMeasured).toBe(false);
     expect(features.primaryFaceConfidence).toBeNull();
-    expect(computeComputedAxes(features as unknown as ValidatedPixelFeatures, WEIGHTS_V1).framing).toBe(1);
+  });
+
+  it('reports face GEOMETRY as unmeasurable too, and framing as absent', async () => {
+    // The same rule this file already applied to the eye region, applied
+    // to the face box in v8. A 0 here said the face filled none of the
+    // frame, and a framing of 1 scored a measurement that never existed.
+    const features = await extractFeatures(await noise(400, 400));
+    expect(features.faceAreaRatio).toBeNull();
+    expect(features.faceCenterOffsetX).toBeNull();
+    expect(features.faceCenterOffsetY).toBeNull();
+    const axes = computeComputedAxes(features as unknown as ValidatedPixelFeatures, WEIGHTS_V1);
+    expect(axes.framing).toBeUndefined();
+    // The axes that do not need a face are still measured.
+    expect(axes.sharpness).toBeGreaterThan(0);
+    expect(axes.resolution).toBeGreaterThan(0);
   });
 
   it('measures eye-region sharpness only once a face locates the eyes', async () => {

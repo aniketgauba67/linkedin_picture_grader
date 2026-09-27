@@ -76,7 +76,7 @@ const features: ComputedFeatures = {
   isGrayscale: false,
   aspectExtreme: false,
   sourceFormat: 'jpeg',
-  extractorVersion: 'v7',
+  extractorVersion: 'v8',
 };
 
 const faceFeatures: ComputedFeatures = {
@@ -258,11 +258,11 @@ describe('unexpected extraction failures', () => {
 describe('verified SHA and feature cache', () => {
   it('reuses current cached features and associates them with this photo', async () => {
     register(PHOTO_B, BYTES);
-    globalFeatures.set(`${SHA}:v7`, features);
+    globalFeatures.set(`${SHA}:v8`, features);
     const response = await extract(request(PHOTO_B));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ photoId: PHOTO_B, featuresCached: true });
-    expect(mocks.getFeaturesByHash).toHaveBeenCalledWith(expect.anything(), SHA, 'v7');
+    expect(mocks.getFeaturesByHash).toHaveBeenCalledWith(expect.anything(), SHA, 'v8');
     expect(mocks.extractAll).not.toHaveBeenCalled();
     expect(mocks.claimExtraction).not.toHaveBeenCalled();
     expect(mocks.upsertFeatures).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ photoId: PHOTO_B, sha256: SHA }));
@@ -272,7 +272,7 @@ describe('verified SHA and feature cache', () => {
   it('judges a new photo with a face after reusing another photo\'s features', async () => {
     register(PHOTO_A, BYTES);
     register(PHOTO_B, BYTES);
-    globalFeatures.set(`${SHA}:v7`, faceFeatures);
+    globalFeatures.set(`${SHA}:v8`, faceFeatures);
     photoFeatures.set(PHOTO_A, faceFeatures);
 
     const response = await extract(request(PHOTO_B));
@@ -299,7 +299,7 @@ describe('verified SHA and feature cache', () => {
 
   it('reuses this photo\'s existing active-model assessment on a cache hit', async () => {
     register(PHOTO_B, BYTES);
-    globalFeatures.set(`${SHA}:v7`, faceFeatures);
+    globalFeatures.set(`${SHA}:v8`, faceFeatures);
     assessments.set(assessmentKey(PHOTO_B, 'claude-sonnet-5'), {
       status: 'assessed', assessment: judgedAssessment,
     });
@@ -316,7 +316,7 @@ describe('verified SHA and feature cache', () => {
 
   it('does not reuse an assessment from a different model', async () => {
     register(PHOTO_B, BYTES);
-    globalFeatures.set(`${SHA}:v7`, faceFeatures);
+    globalFeatures.set(`${SHA}:v8`, faceFeatures);
     assessments.set(assessmentKey(PHOTO_B, 'older-model'), {
       status: 'assessed', assessment: judgedAssessment,
     });
@@ -334,7 +334,7 @@ describe('verified SHA and feature cache', () => {
 
   it('skips the judge for a no-face global cache hit', async () => {
     register(PHOTO_B, BYTES);
-    globalFeatures.set(`${SHA}:v7`, features);
+    globalFeatures.set(`${SHA}:v8`, features);
     const response = await extract(request(PHOTO_B));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
@@ -347,7 +347,7 @@ describe('verified SHA and feature cache', () => {
 
   it('fails on an uncertain assessment read without calling the judge', async () => {
     register(PHOTO_B, BYTES);
-    globalFeatures.set(`${SHA}:v7`, faceFeatures);
+    globalFeatures.set(`${SHA}:v8`, faceFeatures);
     assessmentReadError = { message: 'database unavailable' };
     const response = await extract(request(PHOTO_B));
     expect(response.status).toBe(502);
@@ -363,16 +363,16 @@ describe('verified SHA and feature cache', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ photoId: PHOTO_A, featuresCached: false });
     expect(mocks.extractAll).toHaveBeenCalledOnce();
-    expect(mocks.claimExtraction).toHaveBeenCalledWith(expect.anything(), PHOTO_A, SHA, 'v7');
-    expect(mocks.releaseExtraction).toHaveBeenCalledWith(expect.anything(), SHA, 'v7', 'claim-token');
+    expect(mocks.claimExtraction).toHaveBeenCalledWith(expect.anything(), PHOTO_A, SHA, 'v8');
+    expect(mocks.releaseExtraction).toHaveBeenCalledWith(expect.anything(), SHA, 'v8', 'claim-token');
     expect(photoFeatures.get(PHOTO_A)).toEqual(features);
-    expect(globalFeatures.get(`${SHA}:v7`)).toEqual(features);
+    expect(globalFeatures.get(`${SHA}:v8`)).toEqual(features);
   });
 
   it('rejects a false SHA claim before cache access or extraction', async () => {
     const claimed = 'a'.repeat(64);
     register(PHOTO_A, BYTES, claimed);
-    globalFeatures.set(`${claimed}:v7`, features);
+    globalFeatures.set(`${claimed}:v8`, features);
     const response = await extract(request(PHOTO_A));
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ code: 'hash_mismatch' });
@@ -388,7 +388,7 @@ describe('verified SHA and feature cache', () => {
     const response = await extract(request(PHOTO_A));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ featuresCached: false });
-    expect(mocks.getFeaturesByHash).toHaveBeenCalledWith(expect.anything(), SHA, 'v7');
+    expect(mocks.getFeaturesByHash).toHaveBeenCalledWith(expect.anything(), SHA, 'v8');
     expect(mocks.extractAll).toHaveBeenCalledOnce();
   });
 
@@ -418,7 +418,7 @@ describe('verified SHA and feature cache', () => {
     const response = await extract(request(PHOTO_A));
     expect(response.status).toBe(200);
     expect(mocks.extractAll).toHaveBeenCalledWith(Buffer.from(bytes));
-    expect(mocks.getFeaturesByHash).toHaveBeenCalledWith(expect.anything(), digest, 'v7');
+    expect(mocks.getFeaturesByHash).toHaveBeenCalledWith(expect.anything(), digest, 'v8');
   });
 
   it('rejects an unsupported signature before extraction or judging', async () => {
@@ -496,8 +496,8 @@ describe('verified SHA and feature cache', () => {
     const response = await extract(request(PHOTO_A));
     expect(response.status).toBe(200);
     expect(mocks.extractAll).toHaveBeenCalledWith(Buffer.from(bytes));
-    expect(mocks.getFeaturesByHash).toHaveBeenCalledWith(expect.anything(), originalSha, 'v7');
-    expect(mocks.claimExtraction).toHaveBeenCalledWith(expect.anything(), PHOTO_A, originalSha, 'v7');
+    expect(mocks.getFeaturesByHash).toHaveBeenCalledWith(expect.anything(), originalSha, 'v8');
+    expect(mocks.claimExtraction).toHaveBeenCalledWith(expect.anything(), PHOTO_A, originalSha, 'v8');
     expect(mocks.judgePhoto).not.toHaveBeenCalled();
   });
 
@@ -542,7 +542,7 @@ describe('verified SHA and feature cache', () => {
     expect(mocks.judgePhoto).not.toHaveBeenCalled();
     expect(mocks.upsertAssessment).not.toHaveBeenCalled();
     expect(mocks.upsertFeatures).not.toHaveBeenCalled();
-    expect(mocks.releaseExtraction).toHaveBeenCalledWith(expect.anything(), createHash('sha256').update(truncated).digest('hex'), 'v7', 'claim-token');
+    expect(mocks.releaseExtraction).toHaveBeenCalledWith(expect.anything(), createHash('sha256').update(truncated).digest('hex'), 'v8', 'claim-token');
   });
 
   it('registers the upload claim without reporting an unverified cache hit', async () => {
@@ -644,8 +644,8 @@ describe('concurrent extraction for a verified cache identity', () => {
     await vi.waitFor(() => expect(mocks.extractAll).toHaveBeenCalledOnce());
     const loser = extract(request(photoB));
     await vi.waitFor(() => expect(mocks.claimExtraction).toHaveBeenCalledTimes(2));
-    expect(mocks.claimExtraction).toHaveBeenNthCalledWith(1, expect.anything(), photoA, SHA, 'v7');
-    expect(mocks.claimExtraction).toHaveBeenNthCalledWith(2, expect.anything(), photoB, SHA, 'v7');
+    expect(mocks.claimExtraction).toHaveBeenNthCalledWith(1, expect.anything(), photoA, SHA, 'v8');
+    expect(mocks.claimExtraction).toHaveBeenNthCalledWith(2, expect.anything(), photoB, SHA, 'v8');
     if (finishExtraction === undefined) throw new Error('extractor did not start');
     finishExtraction(measuredFeatures);
 
@@ -657,7 +657,7 @@ describe('concurrent extraction for a verified cache identity', () => {
     expect(mocks.extractAll).toHaveBeenCalledOnce();
     expect(photoFeatures.get(photoA)).toEqual(measuredFeatures);
     expect(photoFeatures.get(photoB)).toEqual(measuredFeatures);
-    expect(mocks.releaseExtraction).toHaveBeenCalledWith(expect.anything(), SHA, 'v7', 'owner-token');
+    expect(mocks.releaseExtraction).toHaveBeenCalledWith(expect.anything(), SHA, 'v8', 'owner-token');
   }
 
   it('lets two attempts for one photo share one extraction', async () => {
@@ -696,7 +696,7 @@ describe('concurrent extraction for a verified cache identity', () => {
     finishJudgment({ ok: true, assessment: judgedAssessment });
     const response = await pending;
     expect(response.status).toBe(200);
-    expect(mocks.releaseExtraction).toHaveBeenCalledWith(expect.anything(), SHA, 'v7', 'claim-token');
+    expect(mocks.releaseExtraction).toHaveBeenCalledWith(expect.anything(), SHA, 'v8', 'claim-token');
   });
 
   it('retries the VLM after features were cached but the first judgment failed', async () => {
@@ -708,9 +708,9 @@ describe('concurrent extraction for a verified cache identity', () => {
     expect(first.status).toBe(500);
     expect(await first.json()).toEqual({ error: 'Extraction failed.' });
     expect(photoFeatures.get(PHOTO_A)).toEqual(faceFeatures);
-    expect(globalFeatures.get(`${SHA}:v7`)).toEqual(faceFeatures);
+    expect(globalFeatures.get(`${SHA}:v8`)).toEqual(faceFeatures);
     expect(assessments.size).toBe(0);
-    expect(mocks.releaseExtraction).toHaveBeenCalledWith(expect.anything(), SHA, 'v7', 'claim-token');
+    expect(mocks.releaseExtraction).toHaveBeenCalledWith(expect.anything(), SHA, 'v8', 'claim-token');
 
     const retry = await extract(request(PHOTO_A));
     expect(retry.status).toBe(200);
@@ -730,7 +730,7 @@ describe('concurrent extraction for a verified cache identity', () => {
       '[api/extract] extraction',
       expect.objectContaining({ message: 'private Sharp decoder detail' }),
     );
-    expect(mocks.releaseExtraction).toHaveBeenCalledWith(expect.anything(), SHA, 'v7', 'claim-token');
+    expect(mocks.releaseExtraction).toHaveBeenCalledWith(expect.anything(), SHA, 'v8', 'claim-token');
     const retry = await extract(request(PHOTO_A));
     expect(retry.status).toBe(200);
     expect(await retry.json()).toMatchObject({ featuresCached: false });

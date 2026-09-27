@@ -62,7 +62,7 @@ const features: ComputedFeatures = {
   isGrayscale: false,
   aspectExtreme: false,
   sourceFormat: 'jpeg',
-  extractorVersion: 'v7',
+  extractorVersion: 'v8',
 };
 
 const assessed = { background: 4, attire: 3, expression: 4, solo: 5 };

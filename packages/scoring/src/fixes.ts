@@ -1,6 +1,7 @@
 import type { AxisName } from './axes.js';
 import { AXES, AXIS_MAX } from './axes.js';
 import type { PixelFeatures } from './pixel-axes.js';
+import { faceCenterOffset } from './pixel-axes.js';
 import type { Context } from './weights.js';
 import { weightsFor } from './weights.js';
 import { WEIGHTS_V1 } from './weights/v1.js';
@@ -25,7 +26,19 @@ export function severityFor(headroom: number): FixSeverity {
   return 'low';
 }
 
-const pct = (value: number): string => `${Math.round(value * 100)}%`;
+/**
+ * A measured fraction as a percentage, never rounded to a bare "0%".
+ *
+ * A face filling 0.44% of the frame is a real measurement and a real
+ * problem, but "your face fills 0% of the frame" reads as the bug where
+ * an unmeasured face was reported as zero - and it is wrong besides.
+ * Anything under 1% keeps a decimal so the number stays true.
+ */
+const pct = (value: number): string => {
+  const scaled = value * 100;
+  if (scaled > 0 && scaled < 1) return `${scaled.toFixed(1)}%`;
+  return `${Math.round(scaled)}%`;
+};
 
 /**
  * Writes one instruction per weak axis.
@@ -45,10 +58,16 @@ function messageFor(axis: AxisName, features: PixelFeatures): string {
 
   switch (axis) {
     case 'framing': {
-      if (features.faceCount === 0) {
-        return 'Reframe so your face is clearly visible - no face was detected in this photo.';
-      }
       const ratio = features.faceAreaRatio;
+      const offset = faceCenterOffset(features);
+      // Never quote a percentage that was not measured. A null ratio
+      // used to arrive here as 0 and produce "your face fills 0% of the
+      // frame" for a photograph full of faces.
+      if (ratio === null || offset === null) {
+        return features.faceCount === 0
+          ? 'Reframe so your face is clearly visible - no face was detected in this photo.'
+          : 'Move closer or crop tighter - the faces in this photo are too small to measure framing from.';
+      }
       const band = `${pct(framing.idealRatioMin)}-${pct(framing.idealRatioMax)}`;
       if (ratio < framing.idealRatioMin) {
         return `Recrop to head-and-shoulders - your face fills ${pct(ratio)} of the frame, aim for ${band}.`;
@@ -56,7 +75,6 @@ function messageFor(axis: AxisName, features: PixelFeatures): string {
       if (ratio > framing.idealRatioMax) {
         return `Step back or crop wider - your face fills ${pct(ratio)} of the frame, aim for ${band}.`;
       }
-      const offset = Math.hypot(features.faceCenterOffsetX, features.faceCenterOffsetY);
       return `Recentre the crop - your face sits ${pct(offset)} of the frame off centre, keep it under ${pct(framing.offsetTolerance)}.`;
     }
 

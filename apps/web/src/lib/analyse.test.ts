@@ -16,7 +16,7 @@ const features = {
   faceRegionMeasured: true, exposureDelta: 2, width: 1200, height: 1600, faceAreaRatio: 0.18,
   faceCenterOffsetX: 0, faceCenterOffsetY: 0, faceCount: 1, yaw: 2, roll: 0.5, pitch: null,
   eyeOpenness: null, smileIntensity: null, primaryFaceConfidence: 0.94, secondLargestFaceRatio: 0,
-  isGrayscale: false, aspectExtreme: false, sourceFormat: 'jpeg', extractorVersion: 'v7',
+  isGrayscale: false, aspectExtreme: false, sourceFormat: 'jpeg', extractorVersion: 'v8',
 };
 
 /** Evidence strings are length-checked by the rubric schema. */
@@ -62,7 +62,7 @@ function deps(stubs: RouteStubs = {}, stages: Stage[] = []): AnalyseDeps {
       }
       if (target.endsWith('/api/extract')) {
         return (stubs.extract ?? (() =>
-          json({ photoId: PHOTO_ID, features, extractorVersion: 'v7', featuresCached: false, assessment: ASSESSMENT, declined: null })))();
+          json({ photoId: PHOTO_ID, features, extractorVersion: 'v8', featuresCached: false, assessment: ASSESSMENT, declined: null })))();
       }
       if (target.endsWith('/functions/v1/score')) {
         // The Edge function reads body.photoId and 400s on anything

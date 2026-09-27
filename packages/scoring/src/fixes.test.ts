@@ -23,7 +23,7 @@ const FEATURES: PixelFeatures = {
   faceCenterOffsetX: 0.02,
   faceCenterOffsetY: 0.02,
   faceCount: 1,
-  extractorVersion: 'v7',
+  extractorVersion: 'v8',
 };
 
 const axesAt = (value: number) => Object.fromEntries(AXES.map((a) => [a, value]));
@@ -110,5 +110,59 @@ describe('buildFixes', () => {
     const computedOnly = { sharpness: 2, lighting: 2, resolution: 2, framing: 2 };
     const fixes = buildFixes(computedOnly, FEATURES, 'corporate', 8);
     expect(fixes.every((f) => ['sharpness', 'lighting', 'resolution', 'framing'].includes(f.axis))).toBe(true);
+  });
+});
+
+/**
+ * v8: a fix may never quote a measurement that was not taken.
+ *
+ * "your face fills 0% of the frame" was generated for a photograph
+ * containing six faces, because a missing faceAreaRatio arrived here as
+ * a zero and 0 formats perfectly well as a percentage.
+ */
+describe('framing advice never invents a percentage', () => {
+  const unmeasured: PixelFeatures = {
+    ...FEATURES,
+    faceAreaRatio: null,
+    faceCenterOffsetX: null,
+    faceCenterOffsetY: null,
+  };
+
+  const framingFix = (features: PixelFeatures): string | undefined =>
+    buildFixes({ ...axesAt(5), framing: 1 }, features, 'corporate').find(
+      (fix) => fix.axis === 'framing',
+    )?.message;
+
+  it('says nothing about 0% when no face was detected', () => {
+    const message = framingFix({ ...unmeasured, faceCount: 0 });
+    expect(message).toBeDefined();
+    expect(message).not.toMatch(/0%/);
+    expect(message).toMatch(/no face was detected/i);
+  });
+
+  it('says nothing about 0% when faces were detected but none measurable', () => {
+    const message = framingFix({ ...unmeasured, faceCount: 6 });
+    expect(message).toBeDefined();
+    expect(message).not.toMatch(/0%/);
+    expect(message).toMatch(/too small to measure/i);
+  });
+
+  it('still quotes the real percentage when one was measured', () => {
+    const message = framingFix({ ...FEATURES, faceAreaRatio: 0.04 });
+    expect(message).toMatch(/4% of the frame/);
+  });
+});
+
+describe('a small measured face is not rounded away to 0%', () => {
+  it('keeps a decimal under one percent', () => {
+    // 0.44% of the frame: real, bad, and not zero. Rounding it to "0%"
+    // was indistinguishable from the unmeasured-face bug.
+    const message = buildFixes(
+      { ...axesAt(5), framing: 1 },
+      { ...FEATURES, faceAreaRatio: 0.0044, faceCount: 6 },
+      'corporate',
+    ).find((fix) => fix.axis === 'framing')?.message;
+    expect(message).toMatch(/0\.4% of the frame/);
+    expect(message).not.toMatch(/fills 0% of the frame/);
   });
 });

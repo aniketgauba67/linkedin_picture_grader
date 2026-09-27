@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -16,6 +16,7 @@ import {
   type PopulationRow,
 } from './calibrate-v1.js';
 import { loadHumanLabels, loadManifest } from './dataset.js';
+import { EXTRACTOR_VERSION } from '@pps/schema';
 
 /**
  * Resolved from this file, NOT from cwd. `pnpm test` at the repo root
@@ -46,28 +47,50 @@ const BELOW_FLOOR = ['B016', 'B028', 'B036', 'G009', 'G027', 'G035', 'M030', 'M0
  * source-inspection check carry no data dependency and must keep running
  * in CI - that is most of this file's value on a fresh clone.
  */
-const datasetPresent = existsSync(join(ROOT, 'manifest.jsonl'));
+/**
+ * Present AND extracted by the current extractor. A corpus built by an
+ * older one is not a corpus these checks can use: `loadDatasetFeature`
+ * refuses a stale artifact by design, which is the cache-invalidation
+ * rule working rather than a failure to report.
+ */
+function currentCorpusPresent(): boolean {
+  if (!existsSync(join(ROOT, 'manifest.jsonl'))) return false;
+  const first = readFileSync(join(ROOT, 'manifest.jsonl'), 'utf8').split('\n').find((l) => l.trim() !== '');
+  if (first === undefined) return false;
+  try {
+    return (JSON.parse(first) as { extractor_version?: string }).extractor_version === EXTRACTOR_VERSION;
+  } catch {
+    return false;
+  }
+}
+
+const datasetPresent = currentCorpusPresent();
 const datasetSuite = datasetPresent ? describe : describe.skip;
 const datasetIt = datasetPresent ? it : it.skip;
 if (!datasetPresent) {
   console.warn(
-    `[training] ${ROOT} is absent - skipping the calibration checks that read the seed corpus. ` +
-      'Build it with `pnpm dataset`; see training/DATASET.md.',
+    `[training] no ${EXTRACTOR_VERSION} corpus at ${ROOT} - skipping the calibration checks ` +
+      'that read the seed corpus. Re-extract with `pnpm dataset`; see training/DATASET.md.',
   );
 }
 
 datasetSuite('eligibility filtering', () => {
-  const { byAxis, report } = buildPopulation(ROOT);
+  // Lazy: vitest evaluates a suite body even for `describe.skip`, so
+  // building the population here eagerly would throw during collection
+  // on a machine without a current corpus - the exact case the skip
+  // exists for.
+  let cached: ReturnType<typeof buildPopulation> | null = null;
+  const population = (): ReturnType<typeof buildPopulation> => (cached ??= buildPopulation(ROOT));
 
   it('fits only on images the product would actually score', () => {
-    expect(report.totalSeedImages).toBe(125);
-    expect(report.eligibleImages).toBe(117);
-    expect(report.excludedImages).toBe(8);
-    expect(report.exclusionReasons['below_dimension_floor']).toBe(8);
+    expect(population().report.totalSeedImages).toBe(125);
+    expect(population().report.eligibleImages).toBe(117);
+    expect(population().report.excludedImages).toBe(8);
+    expect(population().report.exclusionReasons['below_dimension_floor']).toBe(8);
   });
 
   it('excludes exactly the known below-floor images, and does not delete them', () => {
-    expect([...report.excludedImageIds]).toEqual(BELOW_FLOOR);
+    expect([...population().report.excludedImageIds]).toEqual(BELOW_FLOOR);
     // Still present in the manifest, still carrying their labels.
     const manifest = loadManifest(ROOT);
     const labels = loadHumanLabels(ROOT);
@@ -79,7 +102,7 @@ datasetSuite('eligibility filtering', () => {
 
   it('keeps below-floor images out of every axis population', () => {
     for (const axis of COMPUTED_AXES) {
-      const ids = new Set((byAxis.get(axis) ?? []).map((row) => row.imageId));
+      const ids = new Set((population().byAxis.get(axis) ?? []).map((row) => row.imageId));
       for (const id of BELOW_FLOOR) expect(ids.has(id), `${axis}/${id}`).toBe(false);
     }
   });
@@ -88,9 +111,9 @@ datasetSuite('eligibility filtering', () => {
     // Nothing is missing today; the guarantee is that a missing driving
     // scalar drops the row rather than becoming a number.
     for (const axis of COMPUTED_AXES) {
-      const fitted = report.fittedRowsPerAxis[axis] ?? 0;
-      const missing = report.missingMeasurements[axis]?.length ?? 0;
-      expect(fitted + missing).toBe(report.eligibleImages);
+      const fitted = population().report.fittedRowsPerAxis[axis] ?? 0;
+      const missing = population().report.missingMeasurements[axis]?.length ?? 0;
+      expect(fitted + missing).toBe(population().report.eligibleImages);
     }
   });
 });
