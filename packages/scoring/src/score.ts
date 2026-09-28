@@ -70,9 +70,9 @@ export function meanToComposite(mean: number): number {
  * Weighted mean over whichever axes are present, renormalised so the
  * weights still sum to 1 across them.
  *
- * Renormalising is what makes the degraded path honest: scoring four
- * axes against weights that were meant to cover eight would quietly
- * report a number roughly half what it should be.
+ * Renormalising keeps the intermediate arithmetic meaningful when only
+ * computed axes exist. The public result contract withholds that number
+ * when no presentation axis was reviewed.
  */
 export function composeScore(
   axes: Readonly<Partial<Record<AxisName, number>>>,
@@ -96,8 +96,9 @@ export function composeScore(
 }
 
 /**
- * Mirror of @pps/schema's DeclineReason. Structural, not imported: this
- * package has no dependencies. A test asserts the two lists match.
+ * Reasons the VLM/scoring arithmetic handles. The public outcome also has
+ * `multiple_faces`, a deterministic eligibility decision made outside the
+ * scoring arithmetic. This package has no dependencies by design.
  */
 export type DeclineReason =
   | 'no_face'
@@ -107,17 +108,12 @@ export type DeclineReason =
   | 'corrupt_file';
 
 /**
- * The most a photograph can score once the judge has declined for a
- * given reason.
+ * The cap applied to the intermediate composite when the judge declines.
  *
- * A DECLINE IS A FINDING, NOT MISSING DATA. That distinction is the
- * whole point of this table. Without it a decline merely removed the
- * four judged axes, the composite renormalised over the four computed
- * ones, and a photograph of five people at a party scored 7.6 out of 10
- * because it happened to be sharp, well lit and high resolution - which
- * it was. The axis that exists to catch exactly that photograph, `solo`,
- * is judged rather than computed, so declining is precisely what stops
- * it from firing.
+ * A DECLINE IS A FINDING, NOT MISSING DATA. The axes and fixes remain
+ * useful, but the public partial review omits this computed-only number.
+ * Keep the cap for the scoring library's arithmetic contract; it is not
+ * a substitute for presentation axes the judge did not measure.
  *
  * `model_refusal` is the one reason that carries no information about
  * the photograph - the model declined to answer, which says nothing
@@ -149,8 +145,8 @@ export interface ScoreInput {
   readonly features: ValidatedPixelFeatures;
   /**
    * Absent when the vision model declined or was unavailable. The four
-   * computed axes are still valid, so half a score with an honest label
-   * beats no score.
+   * computed axes are still valid, but their intermediate composite must
+   * not be exposed as an overall profile-photo score.
    */
   readonly judged?: JudgedScores | undefined;
   /**
@@ -240,9 +236,9 @@ export function score(input: ScoreInput): ScoreResultShape {
    * unopposed there is no framing score to floor. The two conditions
    * cannot both hold.
    *
-   * The user-facing outcome is unchanged for a genuine no-face image:
-   * framing is absent rather than 1, which the composite renormalises
-   * over, and the decline cap still applies.
+   * For a genuine no-face image framing is absent rather than 1. The
+   * intermediate composite still renormalises and caps as before; the
+   * public review exposes only the measured axes and fixes.
    */
 
   const composed = composeScore(rounded, context);

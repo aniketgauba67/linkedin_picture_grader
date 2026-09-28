@@ -555,29 +555,44 @@ describe('AnalysisOutcome', () => {
     },
   };
 
-  /** The capped composite a declined photograph still earns. */
-  const cappedScore = {
-    ...scored.result,
-    score: 2,
-    coverage: 'partial',
+  /** A partial review keeps measured evidence, never an overall number. */
+  const review = {
     axes: {
       sharpness: 5,
       lighting: 5,
       resolution: 5,
       framing: 1,
     },
+    context: 'startup',
+    fixes: [],
+    confidence: 1,
+    weightsVersion: '2026-09-24.1',
+    coverage: 'partial',
   };
 
   const declined = {
     status: 'declined',
     reason: 'no_face',
     message: 'No face was found in this image.',
-    score: cappedScore,
+    review,
   };
 
-  it('accepts both branches', () => {
+  it('accepts complete, partial, and declined branches', () => {
     expect(isScored(AnalysisOutcome.parse(scored))).toBe(true);
+    expect(AnalysisOutcome.parse({ status: 'partial', review }).status).toBe('partial');
     expect(isDeclined(AnalysisOutcome.parse(declined))).toBe(true);
+  });
+
+  it('does not let a computed-only composite masquerade as a complete score', () => {
+    expect(AnalysisOutcome.safeParse({
+      status: 'scored',
+      result: { ...scored.result, coverage: 'partial', axes: review.axes },
+    }).success).toBe(false);
+    expect(AnalysisOutcome.safeParse({ status: 'partial', review: { ...review, score: 7.6 } }).success).toBe(false);
+    expect(AnalysisOutcome.safeParse({
+      status: 'partial',
+      review: { ...review, axes: { ...review.axes, solo: 1 } },
+    }).success).toBe(false);
   });
 
   it('rejects an unknown status', () => {
@@ -596,68 +611,83 @@ describe('AnalysisOutcome', () => {
 
   it('rejects a decline reason outside the enum', () => {
     expect(AnalysisOutcome.safeParse({ ...declined, reason: 'ugly' }).success).toBe(false);
-    expect(DeclineReason.options).toHaveLength(5);
+    expect(DeclineReason.options).toHaveLength(6);
+  });
+
+  it('treats multiple detected faces as an ineligible photo, not a numeric score or VLM decline', () => {
+    expect(AnalysisOutcome.parse({
+      ...declined, reason: 'multiple_faces', message: 'Choose a photo with one person.',
+    }).status).toBe('declined');
+    expect(PersistedAssessmentResponse.safeParse({
+      status: 'declined', reason: 'multiple_faces', detail: '',
+    }).success).toBe(false);
   });
 
   it('requires a user-facing message on a decline', () => {
     expect(AnalysisOutcome.safeParse({ ...declined, message: '' }).success).toBe(false);
   });
 
-  it('routes both branches through matchOutcome', () => {
+  it('routes all three branches through matchOutcome', () => {
     const describe_ = (outcome: AnalysisOutcome): string =>
       matchOutcome(outcome, {
         scored: (result) => `scored ${result.score}`,
+        partial: (measured) => `partial ${measured.axes.sharpness}`,
         declined: (reason) => `declined ${reason}`,
       });
 
     expect(describe_(AnalysisOutcome.parse(scored))).toBe('scored 7.4');
+    expect(describe_(AnalysisOutcome.parse({ status: 'partial', review }))).toBe('partial 5');
     expect(describe_(AnalysisOutcome.parse(declined))).toBe('declined no_face');
   });
 
-  it('hands the capped score to the declined branch', () => {
+  it('hands measured evidence to the declined branch without a numeric overall score', () => {
     const render = (outcome: AnalysisOutcome): string =>
       matchOutcome(outcome, {
         scored: (result) => `${result.score}`,
-        declined: (_reason, message, score) =>
-          score === undefined ? message : `${score.score} - ${message}`,
+        partial: (measured) => `partial ${measured.axes.sharpness}`,
+        declined: (_reason, message, measured) =>
+          measured === undefined ? message : `${measured.axes.sharpness} - ${message}`,
       });
 
     expect(render(AnalysisOutcome.parse(declined))).toBe(
-      '2 - No face was found in this image.',
+      '5 - No face was found in this image.',
     );
   });
 
   it('keeps .result unreachable on a decline', () => {
     const outcome = AnalysisOutcome.parse(declined);
-    // The union's job. `score` is a capped composite on the declined
-    // branch, not the `result` a scored outcome carries.
+    // The union's job. `review` holds measured evidence, not the scored
+    // branch's complete composite.
     expect('result' in outcome).toBe(false);
-    if (isDeclined(outcome)) expect(outcome.score?.score).toBe(2);
+    if (isDeclined(outcome)) expect(outcome.review?.axes.sharpness).toBe(5);
   });
 
-  it('requires a score on every decline that had features to measure', () => {
-    for (const reason of ['no_face', 'apparent_minor', 'not_a_photo', 'model_refusal']) {
-      const parsed = AnalysisOutcome.safeParse({ ...declined, reason, score: undefined });
+  it('requires a review on every decline that had features to measure', () => {
+    for (const reason of ['no_face', 'multiple_faces', 'apparent_minor', 'not_a_photo', 'model_refusal']) {
+      const parsed = AnalysisOutcome.safeParse({ ...declined, reason, review: undefined });
       expect(parsed.success, reason).toBe(false);
       if (!parsed.success) {
-        expect(parsed.error.issues[0]?.message).toMatch(/must carry its capped score/);
+        expect(parsed.error.issues[0]?.message).toMatch(/must carry measured evidence/);
       }
     }
   });
 
-  it('refuses a score on corrupt_file, where nothing was measured', () => {
-    const withScore = AnalysisOutcome.safeParse({ ...declined, reason: 'corrupt_file' });
-    expect(withScore.success).toBe(false);
-    if (!withScore.success) {
-      expect(withScore.error.issues[0]?.message).toMatch(/never decoded/);
+  it('refuses a review on corrupt_file, where nothing was measured', () => {
+    const withReview = AnalysisOutcome.safeParse({ ...declined, reason: 'corrupt_file' });
+    expect(withReview.success).toBe(false);
+    if (!withReview.success) {
+      expect(withReview.error.issues[0]?.message).toMatch(/never decoded/);
     }
 
     const without = AnalysisOutcome.safeParse({
       ...declined,
       reason: 'corrupt_file',
-      score: undefined,
+      review: undefined,
     });
     expect(without.success).toBe(true);
+    expect(AnalysisOutcome.safeParse({
+      status: 'declined', reason: 'corrupt_file', message: 'Unreadable.', score: scored.result,
+    }).success).toBe(false);
   });
 });
 

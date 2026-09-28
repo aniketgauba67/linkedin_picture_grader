@@ -58,25 +58,26 @@ export function ResultPanel({ view, onReset }: {
   readonly onReset: () => void;
 }) {
   const noFace = view.reason === 'no_face';
+  const multipleFaces = view.reason === 'multiple_faces';
   return (
     <div className="result-copy">
       <div className="result-heading">
         <div>
           <p className="section-kicker">Your photo review</p>
-          <h1>{noFace ? 'No face found in this photo.' : view.kind === 'declined' ? 'This photo needs another look.' : 'Your profile photo score.'}</h1>
+          <h1>{noFace ? 'No face found in this photo.' : multipleFaces ? 'Multiple faces found in this photo.' : view.kind === 'partial' ? 'Partial photo review.' : view.kind === 'declined' ? 'This photo needs another look.' : 'Your profile photo score.'}</h1>
         </div>
         <button type="button" className="text-action result-heading__reset" onClick={onReset}>Try another photo</button>
       </div>
 
-      <section className={`score-hero ${view.kind === 'declined' ? 'score-hero--partial' : ''}`}
+      <section className={`score-hero ${view.kind !== 'scored' ? 'score-hero--partial' : ''}`}
         aria-label="Overall result" role="status" aria-live="polite">
         {view.score === null ? (
-          <p className="score-hero__unscored">Not scored</p>
+          <p className="score-hero__unscored">{view.headline}</p>
         ) : (
           <div className="score-hero__number"><strong>{view.score.toFixed(1)}</strong><span>/ 10</span></div>
         )}
         <div className="score-hero__context">
-          <p>{view.kind === 'declined' ? 'Partial photo review' : 'Overall photo score'}</p>
+          <p>{view.kind === 'scored' ? 'Overall photo score' : 'Partial photo review'}</p>
           <span>{view.detail}</span>
         </div>
       </section>
@@ -86,8 +87,9 @@ export function ResultPanel({ view, onReset }: {
       <section className="recommendations" aria-labelledby="recommendations-heading">
         <div className="content-heading">
           <p className="section-kicker">What to do next</p>
-          <h2 id="recommendations-heading">{noFace && view.fixes.length === 0 ? 'For a full review' : 'Top improvements'}</h2>
+          <h2 id="recommendations-heading">{(noFace && view.fixes.length === 0) || multipleFaces ? 'For a full review' : 'Top improvements'}</h2>
         </div>
+        {multipleFaces && <p className="recommendations__empty">Choose or crop a photo so only one person remains in the frame.</p>}
         {view.fixes.length > 0 ? (
           <ol className="recommendation-list">
             {view.fixes.map((fix, index) => (
@@ -97,7 +99,7 @@ export function ResultPanel({ view, onReset }: {
               </li>
             ))}
           </ol>
-        ) : (
+        ) : !multipleFaces && (
           <p className="recommendations__empty">{noFace
             ? 'Choose a photo with one clearly visible face to see the presentation scores.'
             : 'No specific changes were suggested for this photo.'}</p>

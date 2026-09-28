@@ -118,26 +118,119 @@ describe('the happy path', () => {
 });
 
 describe('success outcomes that are not a plain score', () => {
+  it('converts the deployed computed-only response into a score-free partial review', async () => {
+    const result = await analyse({ file: fileOf() }, deps({
+      score: () => json({
+        status: 'scored',
+        result: {
+          ...scoreResult,
+          score: 7.6,
+          coverage: 'partial',
+          axes: { sharpness: 5, lighting: 5, resolution: 5, framing: 2 },
+        },
+      }),
+    }));
+    expect(result.outcome.status).toBe('partial');
+    if (result.outcome.status !== 'partial') throw new Error('expected a partial review');
+    expect(result.outcome.review.axes).toEqual({ sharpness: 5, lighting: 5, resolution: 5, framing: 2 });
+    expect(result.outcome.review).not.toHaveProperty('score');
+  });
+
+  it('rejects IMG_0918 with three detected faces even when the old Edge returns a partial score', async () => {
+    const result = await analyse({ file: fileOf() }, deps({
+      extract: () => json({
+        photoId: PHOTO_ID, features: { ...features, faceCount: 3, faceAreaRatio: 0.07175 },
+        extractorVersion: 'v8', featuresCached: false, assessment: null, declined: 'no_face',
+      }),
+      score: () => json({
+        status: 'scored',
+        result: { ...scoreResult, score: 7.6, coverage: 'partial',
+          axes: { sharpness: 5, lighting: 5, resolution: 5, framing: 2 } },
+      }),
+    }));
+    expect(result.outcome.status).toBe('declined');
+    if (result.outcome.status !== 'declined') throw new Error('expected a multi-face decline');
+    expect(result.outcome.reason).toBe('multiple_faces');
+    expect(result.outcome.review?.axes).toEqual({ sharpness: 5, lighting: 5, resolution: 5, framing: 2 });
+    expect(result.outcome.review).not.toHaveProperty('score');
+  });
+
+  it('rejects a multi-face photo even if the old Edge returns a complete eight-axis score', async () => {
+    const result = await analyse({ file: fileOf() }, deps({
+      extract: () => json({
+        photoId: PHOTO_ID, features: { ...features, faceCount: 2 },
+        extractorVersion: 'v8', featuresCached: false, assessment: ASSESSMENT, declined: null,
+      }),
+      score: () => json({ status: 'scored', result: {
+        ...scoreResult,
+        fixes: [{ axis: 'solo', severity: 'high', message: 'Choose a photo with one person.' },
+          { axis: 'framing', severity: 'medium', message: 'Move closer.' }],
+      } }),
+    }));
+    expect(result.outcome.status).toBe('declined');
+    if (result.outcome.status !== 'declined') throw new Error('expected a multi-face decline');
+    expect(result.outcome.reason).toBe('multiple_faces');
+    expect(result.outcome.review).not.toHaveProperty('score');
+    expect(result.outcome.review?.axes).toEqual({ sharpness: 4, lighting: 4, resolution: 5, framing: 3 });
+    expect(result.outcome.review?.fixes.map((fix) => fix.axis)).toEqual(['framing']);
+  });
+
+  it('converts a deployed no-face decline without exposing its numeric composite', async () => {
+    const result = await analyse({ file: fileOf() }, deps({
+      score: () => json({
+        status: 'declined', reason: 'no_face', message: 'No usable face was found in this photo.',
+        score: {
+          ...scoreResult,
+          score: 2,
+          coverage: 'partial',
+          axes: { sharpness: 5, lighting: 5, resolution: 5 },
+        },
+      }),
+    }));
+    expect(result.outcome.status).toBe('declined');
+    if (result.outcome.status !== 'declined') throw new Error('expected a decline');
+    expect(result.outcome.review?.axes).toEqual({ sharpness: 5, lighting: 5, resolution: 5 });
+    expect(result.outcome.review).not.toHaveProperty('score');
+  });
+
+  it('rejects a partial response that contains fabricated presentation axes', async () => {
+    await expect(analyse({ file: fileOf() }, deps({
+      score: () => json({
+        status: 'scored',
+        result: {
+          ...scoreResult,
+          score: 7.6,
+          coverage: 'partial',
+          axes: { sharpness: 5, lighting: 5, resolution: 5, framing: 2, background: 4 },
+        },
+      }),
+    }))).rejects.toThrow();
+  });
+
   it('carries a no-face decline with its computed axes', async () => {
     const declined = {
       status: 'declined', reason: 'no_face', message: 'No face was found in this image.',
-      score: { ...scoreResult, score: 2, coverage: 'partial', axes: { sharpness: 4, lighting: 4, resolution: 5, framing: 1 } },
+      review: {
+        context: 'corporate', fixes: [], confidence: 0.55, weightsVersion: scoreResult.weightsVersion,
+        coverage: 'partial', axes: { sharpness: 4, lighting: 4, resolution: 5 },
+      },
     };
     const result = await analyse({ file: fileOf() }, deps({ score: () => json(declined) }));
     expect(result.outcome.status).toBe('declined');
     if (result.outcome.status !== 'declined') throw new Error('unreachable');
-    expect(result.outcome.score?.score).toBe(2);
+    expect(result.outcome.review?.axes.sharpness).toBe(4);
+    expect(result.outcome.review).not.toHaveProperty('score');
     // The four judged axes were never requested and must not appear.
-    expect(Object.keys(result.outcome.score?.axes ?? {})).not.toContain('background');
+    expect(Object.keys(result.outcome.review?.axes ?? {})).not.toContain('background');
   });
 
-  it('accepts a decline that carries no score at all', async () => {
+  it('accepts a corrupt-file decline that carries no measured review', async () => {
     const result = await analyse(
       { file: fileOf() },
       deps({ score: () => json({ status: 'declined', reason: 'corrupt_file', message: 'Could not decode.' }) }),
     );
     if (result.outcome.status !== 'declined') throw new Error('expected a decline');
-    expect(result.outcome.score).toBeUndefined();
+    expect(result.outcome.review).toBeUndefined();
   });
 });
 

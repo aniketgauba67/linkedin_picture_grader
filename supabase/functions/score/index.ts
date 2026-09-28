@@ -15,6 +15,9 @@ import {
   MIN_IMAGE_SHORT_EDGE_PX,
   assertFeaturesUsable,
   belowDimensionFloor,
+  PartialReview,
+  type DeclineReason as OutcomeDeclineReason,
+  type PartialReview as PartialReviewShape,
   type ValidatedFeatures,
 } from '@pps/schema';
 
@@ -97,15 +100,16 @@ function internalFailure(stage: string, error: unknown, status = 502): Response 
 }
 
 /**
- * A decline carries the score the photograph earned anyway.
- *
- * `corrupt_file` is the one reason with no score, because the bytes
- * never decoded and there is nothing to have measured. Every other
- * reason ran extraction first, so there is a real capped number and
- * withholding it leaves the user with nothing to act on.
+ * A decline carries measured evidence without exposing the intermediate
+ * computed-only composite as an overall profile-photo score.
  */
-function declined(reason: DeclineReason, message: string, result: ScoreResultShape): Response {
-  return json({ status: 'declined', reason, message, score: result });
+function declined(reason: OutcomeDeclineReason, message: string, review: PartialReviewShape): Response {
+  return json({ status: 'declined', reason, message, review });
+}
+
+function partialReview(result: ScoreResultShape): PartialReviewShape {
+  const { score: _intermediateComposite, ...evidence } = result;
+  return PartialReview.parse(evidence);
 }
 
 /** The Edge function uses PostgREST directly to keep its bundle small. */
@@ -261,12 +265,22 @@ Deno.serve(async (request: Request): Promise<Response> => {
       confidence: computeConfidence(computed, { soloScore: null }),
       declined: 'no_face',
     });
-    try {
-      await persistScore(photoId, result);
-    } catch (error) {
-      return internalFailure('score persistence', error);
-    }
-    return declined('no_face', 'No usable face was found in this photo.', result);
+    return declined('no_face', 'No usable face was found in this photo.', partialReview(result));
+  }
+  if (computed.faceCount > 1) {
+    // A profile photo needs one clear subject. This is measured detector
+    // evidence, so neither a VLM opinion nor an intermediate composite
+    // can turn a group photo into a scored profile-photo result.
+    const result = score({
+      features: computed,
+      context: rawContext,
+      confidence: computeConfidence(computed, { soloScore: null }),
+    });
+    return declined(
+      'multiple_faces',
+      'Multiple faces were detected in this photo. Choose a photo with one clearly visible person.',
+      partialReview(result),
+    );
   }
   let assessment: AssessmentRow | null;
   try {
@@ -306,30 +320,18 @@ Deno.serve(async (request: Request): Promise<Response> => {
      * face found in this photo" over a measured face asserts something
      * we can see is false, so this is NOT reported as a decline.
      *
-     * It is reported as what it actually is: the computed axes stand,
-     * the four judged axes are missing because the judge never produced
-     * them, and `coverage: 'partial'` already carries exactly that. No
-     * semantic axis is invented, no Claude score is fabricated, and the
-     * rubric is untouched. `score()` withholds the decline cap and the
-     * framing floor for the same reason, and lowers confidence.
+     * The computed axes stand, but all four judged axes are absent.
+     * `score()` still computes its intermediate composite and lowers
+     * confidence. The public partial review omits that composite, so no
+     * caller can present it as a complete profile-photo score.
      */
     if (detectorJudgeConflict(computed, verdict.reason)) {
-      try {
-        await persistScore(photoId, result);
-      } catch (error) {
-        return internalFailure('score persistence', error);
-      }
-      return json({ status: 'scored', result });
-    }
-    try {
-      await persistScore(photoId, result);
-    } catch (error) {
-      return internalFailure('score persistence', error);
+      return json({ status: 'partial', review: partialReview(result) });
     }
     return declined(
       verdict.reason,
       verdict.detail === '' ? 'This image cannot be assessed as a profile photo.' : verdict.detail,
-      result,
+      partialReview(result),
     );
   }
 

@@ -1,11 +1,12 @@
 import { z } from 'zod';
-import { ScoreResult } from './result.js';
+import { FullScoreResult, PartialReview } from './result.js';
 
 /**
- * Why an upload was not scored. All five are things real users will
+ * Why an upload was not scored. All six are things real users will
  * upload, not bugs:
  *
  *   no_face         a logo, a landscape, a pet
+ *   multiple_faces  more than one detected face; not a single-subject profile photo
  *   apparent_minor  a child's photo; we do not score these at all
  *   not_a_photo     a screenshot, an illustration, a slide
  *   model_refusal   the vision model declined to assess the image
@@ -13,6 +14,7 @@ import { ScoreResult } from './result.js';
  */
 export const DeclineReason = z.enum([
   'no_face',
+  'multiple_faces',
   'apparent_minor',
   'not_a_photo',
   'model_refusal',
@@ -21,34 +23,27 @@ export const DeclineReason = z.enum([
 
 export const ScoredOutcome = z.object({
   status: z.literal('scored'),
-  result: ScoreResult,
+  result: FullScoreResult,
 });
 
-export const DeclinedOutcome = z.object({
+/** Pixels were measured, but no presentation axis was assessed. */
+export const PartialOutcome = z.strictObject({
+  status: z.literal('partial'),
+  review: PartialReview,
+});
+
+export const DeclinedOutcome = z.strictObject({
   status: z.literal('declined'),
   reason: DeclineReason,
   /** Shown to the user. Explains the photo, never the person in it. */
   message: z.string().min(1).max(280),
   /**
-   * The score the photograph earned anyway, capped for the decline.
-   *
-   * A DECLINE IS A FINDING, NOT AN ABSENCE, and this field is where that
-   * stops being a slogan. `score()` caps the composite per reason - a
-   * group of five caps at 2 - and that number is information the person
-   * can act on. A bare "this looks like a group photo" tells them
-   * nothing about how far off they are; "2.0, this looks like a group
-   * photo" tells them it is not a near miss.
-   *
-   * ABSENT ONLY WHEN THERE ARE NO USABLE FEATURES. `corrupt_file` is the
-   * case: the bytes never decoded, so there is nothing to have measured
-   * and no honest number to report. Every other reason carries a score.
-   *
-   * Optional rather than a third status on purpose. The union's job is
-   * to stop a caller reaching for `.result` without narrowing, and that
-   * still holds: this is not `result`, it is a capped composite that
-   * only exists on the declined branch.
+   * A DECLINE IS A FINDING, NOT AN ABSENCE: measured axes and actionable
+   * fixes remain available. A numeric composite is withheld when none
+   * of the presentation axes were reviewed. ABSENT ONLY WHEN THERE ARE
+   * NO USABLE FEATURES, as on corrupt_file.
    */
-  score: ScoreResult.optional(),
+  review: PartialReview.optional(),
 });
 
 /**
@@ -58,10 +53,10 @@ export const DeclinedOutcome = z.object({
  * `status` has been narrowed.
  */
 export const AnalysisOutcome = z
-  .discriminatedUnion('status', [ScoredOutcome, DeclinedOutcome])
+  .discriminatedUnion('status', [ScoredOutcome, PartialOutcome, DeclinedOutcome])
   /**
    * The invariant that makes the optional field safe to rely on: a
-   * decline carries a score unless there was nothing to measure.
+   * decline carries a review unless there was nothing to measure.
    *
    * Refined on the UNION rather than on DeclinedOutcome, because
    * `superRefine` returns a ZodEffects and `discriminatedUnion` only
@@ -71,25 +66,26 @@ export const AnalysisOutcome = z
   .superRefine((value, ctx) => {
     if (value.status !== 'declined') return;
 
-    if (value.reason === 'corrupt_file' && value.score !== undefined) {
+    if (value.reason === 'corrupt_file' && value.review !== undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['score'],
-        message: 'corrupt_file cannot carry a score: the bytes never decoded, so nothing was measured',
+        path: ['review'],
+        message: 'corrupt_file cannot carry a review: the bytes never decoded, so nothing was measured',
       });
       return;
     }
-    if (value.reason !== 'corrupt_file' && value.score === undefined) {
+    if (value.reason !== 'corrupt_file' && value.review === undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['score'],
-        message: `a "${value.reason}" decline must carry its capped score - extraction ran, so there is a number, and dropping it leaves the user with nothing to act on`,
+        path: ['review'],
+        message: `a "${value.reason}" decline must carry measured evidence when extraction succeeded`,
       });
     }
   });
 
 export type DeclineReason = z.infer<typeof DeclineReason>;
 export type ScoredOutcome = z.infer<typeof ScoredOutcome>;
+export type PartialOutcome = z.infer<typeof PartialOutcome>;
 export type DeclinedOutcome = z.infer<typeof DeclinedOutcome>;
 export type AnalysisOutcome = z.infer<typeof AnalysisOutcome>;
 
@@ -97,38 +93,41 @@ export function isScored(outcome: AnalysisOutcome): outcome is ScoredOutcome {
   return outcome.status === 'scored';
 }
 
+export function isPartial(outcome: AnalysisOutcome): outcome is PartialOutcome {
+  return outcome.status === 'partial';
+}
+
 export function isDeclined(outcome: AnalysisOutcome): outcome is DeclinedOutcome {
   return outcome.status === 'declined';
 }
 
 /**
- * Exhaustive match over the union. Downstream code should reach for this
- * rather than an `if`: adding a third status turns every call site into a
- * compile error instead of a silently skipped branch.
+ * Exhaustive match over the union. A partial review cannot accidentally
+ * borrow the scored handler and display an intermediate composite.
  */
 export function matchOutcome<T>(
   outcome: AnalysisOutcome,
   handlers: {
     scored: (result: ScoredOutcome['result']) => T;
+    partial: (review: PartialOutcome['review']) => T;
     /**
-     * `score` is the capped composite, or undefined when nothing could
-     * be measured. It is a third positional argument rather than a
-     * second handler so that every existing call site keeps compiling
-     * while ignoring it - the ones that should show the number are the
-     * ones that opt in.
+     * `review` contains measured evidence, or is undefined when the
+     * image could not be decoded.
      */
     declined: (
       reason: DeclineReason,
       message: string,
-      score: DeclinedOutcome['score'],
+      review: DeclinedOutcome['review'],
     ) => T;
   },
 ): T {
   switch (outcome.status) {
     case 'scored':
       return handlers.scored(outcome.result);
+    case 'partial':
+      return handlers.partial(outcome.review);
     case 'declined':
-      return handlers.declined(outcome.reason, outcome.message, outcome.score);
+      return handlers.declined(outcome.reason, outcome.message, outcome.review);
     default: {
       const unreachable: never = outcome;
       throw new Error(`Unhandled analysis outcome: ${JSON.stringify(unreachable)}`);

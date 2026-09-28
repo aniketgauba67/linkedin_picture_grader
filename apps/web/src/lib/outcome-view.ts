@@ -1,14 +1,14 @@
-import type { AnalysisOutcome, DeclineReason, Fix, ScoreResult } from '@pps/schema';
+import type { AnalysisOutcome, DeclineReason, Fix, FullScoreResult, PartialReview } from '@pps/schema';
 import { matchOutcome } from '@pps/schema';
 import { AXIS_DESCRIPTIONS, type AxisName } from '@pps/scoring';
 
 /**
- * What the result screen renders. Both branches of `AnalysisOutcome`
+ * What the result screen renders. All branches of `AnalysisOutcome`
  * collapse to this one shape, so the page has a single thing to draw and
  * cannot accidentally render a decline as a zero score.
  */
 export interface OutcomeView {
-  readonly kind: 'scored' | 'declined';
+  readonly kind: 'scored' | 'partial' | 'declined';
   readonly reason: DeclineReason | null;
   readonly score: number | null;
   readonly headline: string;
@@ -31,10 +31,12 @@ export interface AxisRow {
  * no workaround - it is the one outcome that is not a retake away.
  */
 const DECLINE_COPY: Readonly<Record<DeclineReason, string>> = {
-  // Only reached when the detector agrees: a contradicted no_face never
-  // becomes a decline at all, it becomes a partial score.
+  // Only reached when the detector agrees: a contradicted no_face becomes
+  // a partial review, not a finding that no face exists.
   no_face:
     'No face was found in this image. Upload a photo of yourself and it will be scored.',
+  multiple_faces:
+    'Multiple faces were detected in this photo. Choose a photo with one clearly visible person.',
   apparent_minor: 'This service only scores photos of adults.',
   not_a_photo:
     'This looks like a graphic rather than a photograph. Upload a camera photo instead.',
@@ -42,10 +44,11 @@ const DECLINE_COPY: Readonly<Record<DeclineReason, string>> = {
   corrupt_file: 'This file could not be opened. Re-export it and upload it again.',
 };
 
-/** Below this, the score is shown with a caveat rather than on its own. */
+/** Below this, measured evidence or a complete score gets a confidence caveat. */
 export const LOW_CONFIDENCE = 0.7;
 
-export function toView(outcome: AnalysisOutcome): OutcomeView {
+/** `detectedFaceCount` is descriptive extraction evidence, never a solo score. */
+export function toView(outcome: AnalysisOutcome, detectedFaceCount?: number): OutcomeView {
   return matchOutcome<OutcomeView>(outcome, {
     scored: (result) => ({
       kind: 'scored',
@@ -55,26 +58,32 @@ export function toView(outcome: AnalysisOutcome): OutcomeView {
       detail: `Scored for a ${result.context} audience.`,
       rows: axisRows(result),
       fixes: result.fixes,
-      caveat: caveatFor(result),
+      caveat: caveatFor(result.confidence, true),
     }),
-    declined: (reason, message, score) => ({
+    partial: (review) => ({
+      kind: 'partial',
+      reason: null,
+      score: null,
+      headline: 'Overall score unavailable',
+      detail: 'We could measure this photo\'s image quality, but its presentation could not be verified for profile-photo use.' +
+        (detectedFaceCount !== undefined && detectedFaceCount > 1
+          ? ' Multiple faces were detected in this photo.'
+          : ''),
+      rows: axisRows(review),
+      fixes: review.fixes,
+      caveat: caveatFor(review.confidence, false),
+    }),
+    declined: (reason, message, review) => ({
       kind: 'declined',
       reason,
-      score: score?.score ?? null,
-      // "2.0 / 10" beats "Not scored". A bare decline tells the person
-      // nothing they can act on - it does not say whether this was a
-      // near miss or hopeless, and those call for different next steps.
-      // Only `corrupt_file` has no number, because nothing decoded.
-      headline: score === undefined ? 'Not scored' : `${score.score.toFixed(1)} / 10`,
+      score: null,
+      headline: review === undefined ? 'Not scored' : 'Overall score unavailable',
       // The server's message wins when it has one; the table is the
       // fallback so a new reason never renders as an empty screen.
       detail: message.trim() === '' ? DECLINE_COPY[reason] : message,
-      // The axes that were genuinely measured still show. They are the
-      // evidence behind the number, and on a decline they are usually
-      // the part the person can do something about.
-      rows: score === undefined ? [] : axisRows(score),
-      fixes: score?.fixes ?? [],
-      caveat: score === undefined ? null : caveatFor(score, 'declined'),
+      rows: review === undefined ? [] : axisRows(review),
+      fixes: review?.fixes ?? [],
+      caveat: review === undefined ? null : caveatFor(review.confidence, false),
     }),
   });
 }
@@ -84,7 +93,7 @@ export function toView(outcome: AnalysisOutcome): OutcomeView {
  * judged four are absent, and showing them as blanks would imply we
  * looked and found nothing rather than that we did not look.
  */
-export function axisRows(result: ScoreResult): readonly AxisRow[] {
+export function axisRows(result: FullScoreResult | PartialReview): readonly AxisRow[] {
   const rows: AxisRow[] = [];
   for (const axis of Object.keys(result.axes) as AxisName[]) {
     const score = result.axes[axis];
@@ -95,27 +104,16 @@ export function axisRows(result: ScoreResult): readonly AxisRow[] {
 }
 
 /**
- * `declined` is the decline copy's job: it already names the reason in
- * the detail line, and adding "some details could not be verified"
- * underneath it says the same thing twice.
+ * A partial review has no overall score to call approximate. Its caveat
+ * only qualifies the measurements that actually exist.
  */
-function caveatFor(result: ScoreResult, kind: 'scored' | 'declined' = 'scored'): string | null {
-  /**
-   * A SCORED result with partial coverage is the disagreement case: the
-   * judge declined `no_face` and the detector measured a face, so the
-   * Edge scorer refused to turn that into a decline.
-   *
-   * Say what is actually missing, and nothing about faces. The copy
-   * this replaces was "No face found in this photo.", asserted over a
-   * face we had measured - the one claim we can see is untrue.
-   */
-  if (kind === 'scored' && result.coverage === 'partial') {
-    return 'Some presentation details could not be verified for this photo, so only the measured qualities are scored.';
-  }
-  if (result.confidence >= LOW_CONFIDENCE) {
+function caveatFor(confidence: number, hasOverallScore: boolean): string | null {
+  if (confidence >= LOW_CONFIDENCE) {
     return null;
   }
-  return 'Some measurements could not be verified in this image, so treat the score as approximate.';
+  return hasOverallScore
+    ? 'Some measurements could not be verified in this image, so treat the score as approximate.'
+    : 'Some measured image-quality details may be less certain in this photo.';
 }
 
 export function declineCopy(reason: DeclineReason): string {

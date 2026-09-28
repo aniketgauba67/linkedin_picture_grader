@@ -101,7 +101,7 @@ export function AnalyseForm({ supabaseUrl, supabaseAnonKey }: {
         supabaseAnonKey,
         onStage: setStage,
       });
-      setView(toView(result.outcome));
+      setView(toView(result.outcome, result.extract.features.faceCount));
       setStage('done');
     } catch (error) {
       setStage('failed');

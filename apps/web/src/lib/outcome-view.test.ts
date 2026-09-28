@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { AnalysisOutcome, ScoreResult } from '@pps/schema';
+import type { AnalysisOutcome, FullScoreResult, PartialReview } from '@pps/schema';
 import { AnalysisOutcome as AnalysisOutcomeSchema, DeclineReason } from '@pps/schema';
 import { AXES } from '@pps/scoring';
 import { LOW_CONFIDENCE, declineCopy, toView } from './outcome-view.js';
 
-const result: ScoreResult = {
+const result: FullScoreResult = {
   score: 6.8,
   axes: {
     sharpness: 4,
@@ -59,27 +59,40 @@ describe('toView on a scored outcome', () => {
   });
 });
 
-/** The capped composite a decline carries, except on corrupt_file. */
-const cappedScore = {
-  ...scored.result,
-  score: 2,
-  coverage: 'partial' as const,
+/** A decline retains measured evidence without exposing an overall number. */
+const review: PartialReview = {
+  context: 'corporate',
+  fixes: result.fixes,
+  confidence: 0.55,
+  weightsVersion: result.weightsVersion,
+  coverage: 'partial',
   axes: { sharpness: 5, lighting: 5, resolution: 5, framing: 1 },
 };
 
 describe('toView on a declined outcome', () => {
-  it('shows the capped score, because a bare decline is not actionable', () => {
+  it('shows measured axes without an overall profile-photo score', () => {
     const view = toView({
       status: 'declined',
       reason: 'no_face',
       message: 'No face was found in this image.',
-      score: cappedScore,
+      review,
     });
     expect(view.kind).toBe('declined');
-    // "2.0 / 10" tells the person this is not a near miss. "Not scored"
-    // tells them nothing they can act on.
-    expect(view.headline).toBe('2.0 / 10');
+    expect(view.score).toBeNull();
+    expect(view.headline).toBe('Overall score unavailable');
     expect(view.rows.length).toBeGreaterThan(0);
+  });
+
+  it('names multiple faces as the reason to use a different photo', () => {
+    const view = toView({
+      status: 'declined', reason: 'multiple_faces',
+      message: 'Multiple faces were detected in this photo. Choose a photo with one clearly visible person.',
+      review,
+    });
+    expect(view.reason).toBe('multiple_faces');
+    expect(view.score).toBeNull();
+    expect(view.detail).toMatch(/Choose a photo with one clearly visible person/);
+    expect(view.rows.map((row) => row.axis)).not.toContain('solo');
   });
 
   it('falls back to "Not scored" only when nothing was measured', () => {
@@ -95,7 +108,7 @@ describe('toView on a declined outcome', () => {
 
   it('never renders a decline as a zero', () => {
     for (const view of [
-      toView({ status: 'declined', reason: 'no_face', message: 'x', score: cappedScore }),
+      toView({ status: 'declined', reason: 'no_face', message: 'x', review }),
       toView({ status: 'declined', reason: 'corrupt_file', message: 'x' }),
     ]) {
       expect(view.headline).not.toBe('0.0 / 10');
@@ -103,14 +116,13 @@ describe('toView on a declined outcome', () => {
     }
   });
 
-  it('shows the measured axes as the evidence behind the number', () => {
+  it('shows only genuinely measured axes', () => {
     const view = toView({
       status: 'declined',
       reason: 'no_face',
       message: 'No face was found.',
-      score: cappedScore,
+      review,
     });
-    // framing floored to 1 by the decline; the rest genuinely measured.
     expect(view.rows.find((row) => row.axis === 'framing')?.score).toBe(1);
     expect(view.rows.map((row) => row.axis)).not.toContain('background');
   });
@@ -120,7 +132,7 @@ describe('toView on a declined outcome', () => {
       status: 'declined',
       reason: 'not_a_photo',
       message: 'This is a company logo.',
-      score: cappedScore,
+      review,
     });
     expect(view.detail).toBe('This is a company logo.');
   });
@@ -132,8 +144,8 @@ describe('toView on a declined outcome', () => {
         status: 'declined',
         reason,
         message: ' ',
-        // corrupt_file is the one reason that must NOT carry a score.
-        ...(reason === 'corrupt_file' ? {} : { score: cappedScore }),
+        // corrupt_file is the one reason that has no measured review.
+        ...(reason === 'corrupt_file' ? {} : { review }),
       }),
     );
     expect(view.detail).toBe(declineCopy(reason));
@@ -150,12 +162,13 @@ describe('toView on a declined outcome', () => {
 });
 
 describe('exhaustiveness', () => {
-  it('handles both branches of the union without a default case', () => {
+  it('handles every branch of the union without a default case', () => {
     const outcomes: AnalysisOutcome[] = [
       scored,
+      { status: 'partial', review },
       { status: 'declined', reason: 'corrupt_file', message: 'Could not decode.' },
     ];
-    expect(outcomes.map((outcome) => toView(outcome).kind)).toEqual(['scored', 'declined']);
+    expect(outcomes.map((outcome) => toView(outcome).kind)).toEqual(['scored', 'partial', 'declined']);
   });
 });
 
@@ -163,27 +176,25 @@ describe('exhaustiveness', () => {
  * v8: the judge saying "no face" over a face the detector measured must
  * never reach the user as "No face found in this photo."
  *
- * The Edge scorer stops that case becoming a decline at all - it
- * becomes a scored result with partial coverage - so the assertion
- * here is that the partial-coverage view says something truthful and
- * says nothing about an absent face.
+ * The Edge scorer returns a score-free partial review with measured axes.
  */
 describe('detector-vs-judge disagreement is not reported as a missing face', () => {
   const partial: AnalysisOutcome = {
-    status: 'scored',
-    result: {
-      ...result,
+    status: 'partial',
+    review: {
+      ...review,
       coverage: 'partial',
       axes: { sharpness: 4, lighting: 3, resolution: 5, framing: 2 },
       confidence: 0.8,
     },
   };
 
-  it('renders as a score, not a decline', () => {
+  it('renders as a partial review without an overall score', () => {
     const view = toView(partial);
-    expect(view.kind).toBe('scored');
+    expect(view.kind).toBe('partial');
     expect(view.reason).toBeNull();
-    expect(view.score).not.toBeNull();
+    expect(view.score).toBeNull();
+    expect(view.headline).toBe('Overall score unavailable');
   });
 
   it('never claims no face was found', () => {
@@ -193,7 +204,14 @@ describe('detector-vs-judge disagreement is not reported as a missing face', () 
   });
 
   it('says which part could not be verified', () => {
-    expect(toView(partial).caveat).toMatch(/presentation details could not be verified/i);
+    expect(toView(partial).detail).toMatch(/presentation could not be verified/i);
+  });
+
+  it('can describe multiple raw detections without fabricating a solo score', () => {
+    const view = toView(partial, 3);
+    expect(view.detail).toContain('Multiple faces were detected in this photo.');
+    expect(view.rows.map((row) => row.axis)).not.toContain('solo');
+    expect(toView(partial, 1).detail).not.toContain('Multiple faces');
   });
 
   it('shows only the axes that were actually scored', () => {
@@ -204,8 +222,8 @@ describe('detector-vs-judge disagreement is not reported as a missing face', () 
 
   it('omits framing entirely when it could not be measured', () => {
     const noFraming: AnalysisOutcome = {
-      status: 'scored',
-      result: { ...result, coverage: 'partial', axes: { sharpness: 4, lighting: 3, resolution: 5 } },
+      status: 'partial',
+      review: { ...review, axes: { sharpness: 4, lighting: 3, resolution: 5 } },
     };
     const view = toView(noFraming);
     expect(view.rows.map((row) => row.axis)).not.toContain('framing');

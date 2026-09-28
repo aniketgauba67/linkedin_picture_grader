@@ -20,7 +20,10 @@
 import {
   AnalysisOutcome,
   ApiError,
+  ComputedAxisName,
   ExtractResponse,
+  PartialReview,
+  ScoreResult,
   UploadUrlResponse,
   ACCEPTED_MIME_TYPES,
   MAX_UPLOAD_BYTES,
@@ -112,6 +115,74 @@ async function failureInfo(response: Response, fallback: string): Promise<{ mess
 const PERMANENT_IMAGE_ERRORS = new Set([
   'not_an_image', 'mime_mismatch', 'corrupt_file', 'below_dimension_floor', 'hash_mismatch',
 ]);
+
+/**
+ * The deployed V1.0.2 scorer can still return a computed-only composite as
+ * `scored` (or on a decline). Translate only that known wire shape into the
+ * score-free public contract while the Edge and web releases are staggered.
+ * The shared AnalysisOutcome schema remains strict for every consumer.
+ */
+function parseOutcome(body: unknown): AnalysisOutcome {
+  const current = AnalysisOutcome.safeParse(body);
+  if (current.success) return current.data;
+
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    throw current.error;
+  }
+  const old = body as Record<string, unknown>;
+  const legacyResult = old['status'] === 'scored'
+    ? old['result']
+    : old['status'] === 'declined' ? old['score'] : undefined;
+  const parsed = ScoreResult.safeParse(legacyResult);
+  if (!parsed.success || parsed.data.coverage !== 'partial') {
+    throw current.error;
+  }
+
+  const { score: _intermediateComposite, ...evidence } = parsed.data;
+  const review = PartialReview.safeParse(evidence);
+  if (!review.success) throw current.error;
+
+  if (old['status'] === 'scored') {
+    return AnalysisOutcome.parse({ status: 'partial', review: review.data });
+  }
+  return AnalysisOutcome.parse({
+    status: 'declined', reason: old['reason'], message: old['message'], review: review.data,
+  });
+}
+
+/**
+ * Keep the local app truthful while the deployed Edge scorer is still on
+ * V1.0.2. The updated Edge function makes this same eligibility decision
+ * before assessment lookup. This projection only retains scores and fixes
+ * that were actually measured from pixels; it never computes a new score.
+ */
+function enforceSingleSubject(outcome: AnalysisOutcome, faceCount: number): AnalysisOutcome {
+  if (faceCount <= 1 || (outcome.status === 'declined' && outcome.reason === 'multiple_faces')) {
+    return outcome;
+  }
+  const evidence = outcome.status === 'scored' ? outcome.result : outcome.review;
+  if (evidence === undefined) {
+    throw new TypeError('Scoring result has no measured evidence for a multi-face image');
+  }
+  const { sharpness, lighting, resolution, framing } = evidence.axes;
+  const review = PartialReview.parse({
+    axes: {
+      sharpness, lighting, resolution,
+      ...(framing === undefined ? {} : { framing }),
+    },
+    context: evidence.context,
+    fixes: evidence.fixes.filter((fix) => ComputedAxisName.safeParse(fix.axis).success),
+    confidence: evidence.confidence,
+    weightsVersion: evidence.weightsVersion,
+    coverage: 'partial',
+  });
+  return AnalysisOutcome.parse({
+    status: 'declined',
+    reason: 'multiple_faces',
+    message: 'Multiple faces were detected in this photo. Choose a photo with one clearly visible person.',
+    review,
+  });
+}
 
 function retryAfter(response: Response): number | null {
   const header = response.headers.get('retry-after');
@@ -220,7 +291,7 @@ export async function analyse(input: AnalyseInput, deps: AnalyseDeps): Promise<A
     });
   }
 
-  const outcome = AnalysisOutcome.parse(await scoreResponse.json());
+  const outcome = enforceSingleSubject(parseOutcome(await scoreResponse.json()), extract.features.faceCount);
   stage('done');
   return { photoId, extract, outcome };
 }

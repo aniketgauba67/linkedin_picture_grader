@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AxisName, AxisScores, CompositeScore, ScoreContext } from './axes.js';
+import { AxisName, AxisScores, CompositeScore, JudgedAxisName, ScoreContext } from './axes.js';
 
 export const FixSeverity = z.enum(['high', 'medium', 'low']);
 
@@ -15,76 +15,87 @@ export const Fix = z.object({
   message: z.string().min(1).max(280),
 });
 
-export const ScoreResult = z
-  .object({
-    score: CompositeScore,
-    /**
-     * Partial because the degraded path scores only the four computed
-     * axes. The refinement below requires all eight when coverage is
-     * `full`, so the guarantee is kept exactly where it applies rather
-     * than being weakened for everyone.
-     */
-    axes: AxisScores.partial(),
-    context: ScoreContext,
-    fixes: z.array(Fix),
+const ResultEvidence = z.object({
+  /** Framing may be absent when no primary face qualified. */
+  axes: AxisScores.partial(),
+  context: ScoreContext,
+  fixes: z.array(Fix),
   /**
    * 0-1. How much of the input the scorer could actually verify. A single
    * square-on face at a usable resolution is 1; an off-axis face, several
    * faces, or heavy compression pulls it down.
    */
-    confidence: z.number().finite().min(0).max(1),
+  confidence: z.number().finite().min(0).max(1),
   /**
-   * Identifies the hand-set weight table that produced `score`, so two
-   * scores are only ever compared when they were produced the same way.
+   * Identifies the hand-set weight table used for the arithmetic result.
    */
-    weightsVersion: z.string().min(1),
+  weightsVersion: z.string().min(1),
   /**
    * Which axes contributed.
    *
-   * `partial` means the vision model declined or was unavailable, so
-   * only the four computed axes were scored and their weights were
-   * renormalised over themselves. Deliberately separate from
-   * `confidence`: one says how sure we are, the other says what we
-   * looked at. Folding a label into the number would lose the number
-   * exactly when it matters most.
+   * `partial` means the vision model declined or was unavailable. The
+   * scoring package may compute an intermediate composite from the
+   * available axes, but the public partial review omits that number.
    */
-    coverage: z.enum(['full', 'partial']),
-  })
-  .superRefine((value, ctx) => {
-    const present = Object.keys(value.axes);
-    /**
-     * `framing` is the one axis that can be legitimately absent at any
-     * coverage: since extractor v8 it exists only when a face qualified
-     * as the subject, and a photograph with no usable face has no
-     * framing to report rather than a framing of 1. Coverage describes
-     * whether the JUDGE ran; it cannot promise a measurement the pixels
-     * did not contain.
-     */
-    const required = (
-      value.coverage === 'full'
-        ? AxisName.options
-        : (['sharpness', 'lighting', 'resolution', 'framing'] as const)
-    ).filter((axis) => axis !== 'framing');
+  coverage: z.enum(['full', 'partial']),
+});
 
-    for (const axis of required) {
-      if (value.axes[axis] === undefined) {
+function validateCoverage(value: z.infer<typeof ResultEvidence>, ctx: z.RefinementCtx): void {
+  const present = Object.keys(value.axes);
+  /**
+   * `framing` can be absent at any coverage: since extractor v8 it exists
+   * only when a face qualified as the subject. Coverage cannot promise
+   * a measurement the pixels did not contain.
+   */
+  const required = (
+    value.coverage === 'full'
+      ? AxisName.options
+      : (['sharpness', 'lighting', 'resolution', 'framing'] as const)
+  ).filter((axis) => axis !== 'framing');
+
+  for (const axis of required) {
+    if (value.axes[axis] === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['axes', axis],
+        message: `coverage "${value.coverage}" requires ${axis}`,
+      });
+    }
+  }
+
+  if (value.coverage === 'partial' && present.length === AxisName.options.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['coverage'],
+      message: 'coverage "partial" but every axis is present - use "full"',
+    });
+  }
+}
+
+/** Arithmetic output. A partial composite is internal, not an overall profile-photo score. */
+export const ScoreResult = ResultEvidence.extend({ score: CompositeScore }).superRefine(validateCoverage);
+
+/** A public overall score requires the complete four-axis presentation assessment. */
+export const FullScoreResult = ScoreResult.and(z.object({ coverage: z.literal('full') }));
+
+/** Measured evidence when no presentation axis was reviewed. No composite crosses the API. */
+export const PartialReview = ResultEvidence.extend({ coverage: z.literal('partial') })
+  .strict()
+  .superRefine((value, ctx) => {
+    validateCoverage(value, ctx);
+    for (const axis of JudgedAxisName.options) {
+      if (value.axes[axis] !== undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['axes', axis],
-          message: `coverage "${value.coverage}" requires ${axis}`,
+          message: `partial review cannot carry a judged ${axis} axis`,
         });
       }
-    }
-
-    if (value.coverage === 'partial' && present.length === AxisName.options.length) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['coverage'],
-        message: 'coverage "partial" but every axis is present - use "full"',
-      });
     }
   });
 
 export type FixSeverity = z.infer<typeof FixSeverity>;
 export type Fix = z.infer<typeof Fix>;
 export type ScoreResult = z.infer<typeof ScoreResult>;
+export type FullScoreResult = z.infer<typeof FullScoreResult>;
+export type PartialReview = z.infer<typeof PartialReview>;

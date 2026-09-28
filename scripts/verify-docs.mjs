@@ -164,7 +164,7 @@ const CLAIMS = [
   ['docs/calibration-notes.md', 'with the evidence that rules the merge out', 'At the same measurement the two passes disagree by two whole points'],
   ['training/calibrate.ts', 'the top-up says it was labelled before measuring', 'BEFORE framingRaw was computed'],
   ['packages/scoring/src/score.ts', 'a decline is a finding, not missing data', 'A DECLINE IS A FINDING, NOT MISSING DATA'],
-  ['packages/scoring/src/score.ts', 'the cap is applied after renormalising, and why', 'renormalising is exactly the step that let a declined photograph'],
+  ['packages/scoring/src/score.ts', 'the partial composite is internal', 'the public partial review omits this computed-only number'],
   ['packages/scoring/src/weights/v1.ts', 'the band is derived from observation with its n', 'DERIVED FROM OBSERVATION, n=12'],
   ['packages/scoring/src/weights/v1.ts', 'the LinkedIn denominator mismatch is recorded', 'DIFFERENT DENOMINATOR'],
   ['packages/scoring/src/weights/v1.ts', 'the withdrawn framing fit is explained', 'It had disabled the axis in production'],
@@ -175,10 +175,10 @@ const CLAIMS = [
   ['docs/calibration-notes.md', 'the constants table exists', 'CONSTANTS — which parts of this system are guesses'],
   ['docs/calibration-notes.md', 'and names the weakest numbers', 'Two numbers carry the most weight with the least evidence'],
   ['packages/eval/src/overlap.ts', 'a silent rescale is called out as the risk', 'A silent rescale becoming routine'],
-  ['packages/schema/src/outcome.ts', 'a decline carries the score it earned', 'A DECLINE IS A FINDING, NOT AN ABSENCE'],
-  ['packages/schema/src/outcome.ts', 'and says when the score is absent', 'ABSENT ONLY WHEN THERE ARE NO USABLE FEATURES'],
+  ['packages/schema/src/outcome.ts', 'a decline retains measured evidence', 'A DECLINE IS A FINDING, NOT AN ABSENCE'],
+  ['packages/schema/src/outcome.ts', 'and says when the review is absent', 'ABSENT ONLY WHEN THERE ARE NO USABLE FEATURES'],
   ['packages/schema/src/outcome.ts', 'the refinement explains why it sits on the union', 'discriminatedUnion` only accepts plain objects as members'],
-  ['apps/web/src/lib/outcome-view.ts', 'the UI shows the number rather than Not scored', 'A bare decline tells the person'],
+  ['apps/web/src/lib/outcome-view.ts', 'partial review withholds an overall number', 'Overall score unavailable'],
 ].map(([file, claim, phrase]) => ({ file, claim, phrase }));
 
 /**

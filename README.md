@@ -217,13 +217,16 @@ it, dropping entries from superseded extractors.
 ## Declining is a normal outcome
 
 Analysis returns an `AnalysisOutcome`, a discriminated union on `status`:
-either `scored` with a `ScoreResult`, or `declined` with one of five
-reasons. A logo, a landscape, and a child's photo are all things users
-will upload, so a decline is a branch of the return type rather than a
-thrown error. Non-corrupt declines can carry the score earned by the
-photograph, including measured axes; `corrupt_file` has no score because
-nothing was measured. `matchOutcome` in `@pps/schema` makes handling
-the branches exhaustive.
+`scored` with a complete eight-axis result, `partial` when image-quality
+axes were measured but no presentation axis was assessed, or `declined`
+with one of six reasons. A logo, a landscape, a group photo, and a child's photo are
+normal inputs, so a decline is a branch rather than a thrown error.
+Partial reviews and non-corrupt declines retain measured axes and fixes
+but expose no overall 1-10 profile-photo score. `corrupt_file` has no
+review because nothing was measured. `matchOutcome` in `@pps/schema`
+makes handling all three branches exhaustive.
+More than one detected face is a deterministic decline before assessment
+lookup: a group photo cannot receive an overall profile-photo score.
 
 ## Extraction and scoring are separate
 

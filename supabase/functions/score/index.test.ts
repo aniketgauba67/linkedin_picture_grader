@@ -85,7 +85,9 @@ async function setup(
           sharpnessEyeRegion: null,
           eyeRegionMeasured: false,
           primaryFaceConfidence: null,
-          faceAreaRatio: 0,
+          faceAreaRatio: null,
+          faceCenterOffsetX: null,
+          faceCenterOffsetY: null,
         } : {}),
         ...featureOverrides,
       };
@@ -126,6 +128,8 @@ describe('Edge scoring on the current tables', () => {
     if (outcome.status === 'scored') {
       expect(outcome.result.coverage).toBe('full');
       expect(outcome.result.axes.solo).toBe(5);
+      expect(outcome.result.score).toBeGreaterThanOrEqual(1);
+      expect(outcome.result.score).toBeLessThanOrEqual(10);
     }
     expect(calls.some((call) => call.includes('/features?'))).toBe(true);
     expect(calls.some((call) => call.includes('/assessments?'))).toBe(true);
@@ -155,17 +159,59 @@ describe('Edge scoring on the current tables', () => {
     expect(outcome.status).toBe('declined');
     if (outcome.status === 'declined') {
       expect(outcome.reason).toBe('no_face');
-      expect(outcome.score?.coverage).toBe('partial');
-      expect(outcome.score?.confidence).toBe(0.55);
-      expect(outcome.score?.axes.sharpness).toBeDefined();
-      expect(outcome.score?.axes.lighting).toBeDefined();
-      expect(outcome.score?.axes.background).toBeUndefined();
-      expect(outcome.score?.axes.attire).toBeUndefined();
-      expect(outcome.score?.axes.expression).toBeUndefined();
-      expect(outcome.score?.axes.solo).toBeUndefined();
+      expect(outcome.review?.coverage).toBe('partial');
+      expect(outcome.review?.confidence).toBe(0.55);
+      expect(outcome.review?.axes.sharpness).toBeDefined();
+      expect(outcome.review?.axes.lighting).toBeDefined();
+      expect(outcome.review?.axes.framing).toBeUndefined();
+      expect(outcome.review?.axes.background).toBeUndefined();
+      expect(outcome.review?.axes.attire).toBeUndefined();
+      expect(outcome.review?.axes.expression).toBeUndefined();
+      expect(outcome.review?.axes.solo).toBeUndefined();
+      expect(outcome.review).not.toHaveProperty('score');
     }
     expect(calls.some((call) => call.includes('/assessments?'))).toBe(false);
-    expect(inserts).toHaveLength(1);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it('rejects multiple measured faces before reading Claude, keeping only computed evidence', async () => {
+    const decline = { status: 'declined', reason: 'no_face', detail: 'No face visible.' };
+    const { handler, calls, inserts } = await setup(3, decline, { faceAreaRatio: 0.07175 });
+    const response = await handler(request());
+    expect(response.status).toBe(200);
+    const raw = await response.json();
+    const outcome = AnalysisOutcome.parse(raw);
+    expect(outcome.status).toBe('declined');
+    if (outcome.status === 'declined') {
+      expect(outcome.reason).toBe('multiple_faces');
+      expect(outcome.message).toMatch(/Multiple faces were detected/);
+      expect(outcome.review).toBeDefined();
+      const review = outcome.review;
+      if (review === undefined) throw new Error('expected measured evidence');
+      expect(review.axes.framing).toBeDefined();
+      expect(review.axes.sharpness).toBeDefined();
+      expect(review.axes.lighting).toBeDefined();
+      expect(review.axes.resolution).toBeDefined();
+      expect(review.axes.background).toBeUndefined();
+      expect(review.axes.attire).toBeUndefined();
+      expect(review.axes.expression).toBeUndefined();
+      expect(review.axes.solo).toBeUndefined();
+      expect(review.fixes.some((fix) => fix.axis === 'framing')).toBe(true);
+    }
+    expect(raw).not.toHaveProperty('score');
+    expect(raw.review).not.toHaveProperty('score');
+    expect(calls.some((call) => call.includes('/assessments?'))).toBe(false);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it('rejects a group even when a complete semantic assessment exists', async () => {
+    const { handler, calls, inserts } = await setup(2, assessment);
+    const response = await handler(request());
+    const outcome = AnalysisOutcome.parse(await response.json());
+    expect(outcome.status).toBe('declined');
+    if (outcome.status === 'declined') expect(outcome.reason).toBe('multiple_faces');
+    expect(calls.some((call) => call.includes('/assessments?'))).toBe(false);
+    expect(inserts).toHaveLength(0);
   });
 
   it.each([
@@ -241,10 +287,10 @@ describe('Edge scoring on the current tables', () => {
     expect(outcome.status).toBe('declined');
     if (outcome.status === 'declined') {
       expect(outcome.reason).toBe('no_face');
-      expect(outcome.score?.coverage).toBe('partial');
+      expect(outcome.review?.coverage).toBe('partial');
     }
     expect(calls.some((call) => call.includes('/assessments?'))).toBe(false);
-    expect(inserts).toHaveLength(1);
+    expect(inserts).toHaveLength(0);
   });
 
   it('validates malformed dimensions before checking eligibility', async () => {

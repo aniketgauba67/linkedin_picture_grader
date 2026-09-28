@@ -30,9 +30,8 @@ const noFace: AnalysisOutcome = {
   status: 'declined',
   reason: 'no_face',
   message: 'No face was found in the photo.',
-  score: {
-    score: 2,
-    axes: { sharpness: 5, lighting: 5, resolution: 4, framing: 1 },
+  review: {
+    axes: { sharpness: 5, lighting: 5, resolution: 4 },
     context: 'corporate',
     fixes: [],
     confidence: 0.55,
@@ -41,9 +40,31 @@ const noFace: AnalysisOutcome = {
   },
 };
 
-function result(outcome: AnalysisOutcome): { outcome: AnalysisOutcome } {
-  // The component only reads the outcome; transport fields are tested in analyse.test.ts.
-  return { outcome };
+const detectorDisagreement: AnalysisOutcome = {
+  status: 'partial',
+  review: {
+    axes: { sharpness: 5, lighting: 5, resolution: 5, framing: 2 },
+    context: 'corporate',
+    fixes: [{ axis: 'framing', severity: 'high', message: 'Move closer to the camera.' }],
+    confidence: 0.4,
+    weightsVersion: '2026-09-24.1',
+    coverage: 'partial',
+  },
+};
+
+const multipleFaces: AnalysisOutcome = {
+  status: 'declined',
+  reason: 'multiple_faces',
+  message: 'Multiple faces were detected in this photo. Choose a photo with one clearly visible person.',
+  review: detectorDisagreement.review,
+};
+
+function result(outcome: AnalysisOutcome, detectedFaceCount = 1): {
+  outcome: AnalysisOutcome;
+  extract: { features: { faceCount: number } };
+} {
+  // The form uses the raw detector count only for descriptive copy.
+  return { outcome, extract: { features: { faceCount: detectedFaceCount } } };
 }
 
 function photo(name = 'portrait.jpg'): File {
@@ -105,16 +126,55 @@ describe('AnalyseForm product journey', () => {
   });
 
   it('shows computed evidence for no-face without inventing judged rows', async () => {
-    mockAnalyse.mockResolvedValue(result(noFace));
+    mockAnalyse.mockResolvedValue(result(noFace, 0));
     renderForm();
     select(photo());
     fireEvent.click(screen.getByRole('button', { name: 'Analyze my photo' }));
-    await waitFor(() => expect(screen.getByText('2.0')).not.toBeNull());
-    expect(document.querySelectorAll('.score-row')).toHaveLength(4);
+    await waitFor(() => expect(screen.getByText('Overall score unavailable')).not.toBeNull());
+    expect(document.querySelectorAll('.score-row')).toHaveLength(3);
     expect(screen.getByText('No face found in this photo.')).not.toBeNull();
     expect(screen.getByText(/one clearly visible face to see the presentation scores/i)).not.toBeNull();
     expect(screen.getByText(/usable face is needed to review background/i)).not.toBeNull();
-    expect(screen.getByText(/treat the score as approximate/i)).not.toBeNull();
+    expect(screen.getByText(/measured image-quality details may be less certain/i)).not.toBeNull();
+    expect(screen.getByText('Presentation').closest('section')?.textContent).toContain('0 of 4 reviewed');
+    expect(screen.queryByText(/\/ 10/)).toBeNull();
+  });
+
+  it('renders a single-face detector/judge disagreement as a score-free partial review', async () => {
+    mockAnalyse.mockResolvedValue(result(detectorDisagreement, 1));
+    renderForm();
+    select(photo('single-face-disagreement.jpeg'));
+    fireEvent.click(screen.getByRole('button', { name: 'Analyze my photo' }));
+    await waitFor(() => expect(screen.getByText('Overall score unavailable')).not.toBeNull());
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Partial photo review.');
+    expect(screen.getByText('Image quality').closest('section')?.textContent).toContain('4 of 4 reviewed');
+    expect(screen.getByText('Presentation').closest('section')?.textContent).toContain('0 of 4 reviewed');
+    expect(document.querySelectorAll('.score-row')).toHaveLength(4);
+    expect(screen.getByText('Move closer to the camera.')).not.toBeNull();
+    expect(screen.queryByText(/multiple faces were detected in this photo/i)).toBeNull();
+    const rendered = document.body.textContent ?? '';
+    expect(rendered).not.toContain('7.6 / 10');
+    expect(rendered).not.toContain('Overall photo score');
+    expect(rendered).not.toContain('Scored for a corporate audience');
+    expect(rendered).not.toContain('No face found');
+    expect(rendered).not.toContain('face fills 0%');
+  });
+
+  it('explicitly rejects IMG_0918 as a group photo with no overall score', async () => {
+    mockAnalyse.mockResolvedValue(result(multipleFaces, 3));
+    renderForm();
+    select(photo('IMG_0918.jpeg'));
+    fireEvent.click(screen.getByRole('button', { name: 'Analyze my photo' }));
+    await waitFor(() => expect(screen.getByText('Overall score unavailable')).not.toBeNull());
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Multiple faces found in this photo.');
+    expect(screen.getByText('Image quality').closest('section')?.textContent).toContain('4 of 4 reviewed');
+    expect(screen.getByText('Presentation').closest('section')?.textContent).toContain('0 of 4 reviewed');
+    expect(screen.getByText(/Choose or crop a photo so only one person remains in the frame/i)).not.toBeNull();
+    expect(document.querySelectorAll('.score-row')).toHaveLength(4);
+    const rendered = document.body.textContent ?? '';
+    expect(rendered).not.toContain('/ 10');
+    expect(rendered).not.toContain('No face found');
+    expect(rendered).not.toContain('Overall photo score');
   });
 
   it('explains client rejection without submitting the file', () => {
